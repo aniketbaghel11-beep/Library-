@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Library Manager</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f9fafb;color:#111827}
+#app{max-width:480px;margin:0 auto;min-height:100vh;padding-bottom:90px}
+button{font:inherit;cursor:pointer}
+input,select,textarea{font:inherit;width:100%;padding:11px 12px;border:1px solid #e5e7eb;border-radius:12px;background:#fff}
+.hdr{background:#4f46e5;color:#fff;padding:14px 16px 18px;border-radius:0 0 24px 24px}
+.hrow{display:flex;justify-content:space-between;align-items:center}
+.hrow h1{font-size:18px;margin:0}
+.chip{background:#6366f1;border:0;color:#fff;border-radius:10px;padding:6px 10px;font-size:12px}
+.mnav{display:flex;justify-content:space-between;align-items:center;background:#6366f1;border-radius:12px;padding:4px 8px;margin-top:12px}
+.mnav button{background:none;border:0;color:#fff;font-size:22px;padding:2px 10px}
+.mnav b{font-size:15px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+.stat{background:rgba(255,255,255,.15);border-radius:12px;padding:10px}
+.stat small{opacity:.8;font-size:12px;display:block}
+.stat b{font-size:20px}
+.pad{padding:0 16px;margin-top:14px}
+.alert{display:block;width:100%;text-align:left;background:#fffbeb;border:1px solid #fcd34d;color:#92400e;border-radius:12px;padding:12px;margin-bottom:12px;font-size:14px}
+.filters{display:flex;gap:6px;margin:12px 0}
+.filters button{flex:1;padding:7px 0;border-radius:10px;border:1px solid #e5e7eb;background:#fff;font-size:11px;color:#4b5563}
+.filters button.on{background:#4f46e5;color:#fff;border-color:#4f46e5}
+.item{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1px solid #f3f4f6;border-radius:14px;padding:12px;margin-bottom:8px}
+.seatbox{width:44px;height:44px;border-radius:10px;background:#eef2ff;color:#4338ca;display:flex;flex-direction:column;align-items:center;justify-content:center;flex-shrink:0}
+.seatbox small{font-size:9px}.seatbox b{line-height:1}
+.grow{flex:1;min-width:0}
+.nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sub{font-size:12px;color:#6b7280}
+.red{color:#dc2626}.amber{color:#d97706}.green{color:#15803d}
+.pill{font-size:12px;font-weight:600;padding:4px 9px;border-radius:99px}
+.pill.p{background:#dcfce7;color:#15803d}.pill.u{background:#fee2e2;color:#dc2626}
+.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.sbtn{min-height:58px;border:0;border-radius:10px;font-weight:700;font-size:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 2px;line-height:1.25;overflow:hidden}
+.sbtn small{font-size:10px;font-weight:500;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-height:12px}
+.sbtn.paid{background:#22c55e;color:#fff}.sbtn.unpaid{background:#ef4444;color:#fff}.sbtn.vacant{background:#e5e7eb;color:#4b5563}
+nav{position:fixed;bottom:0;left:0;right:0;max-width:480px;margin:0 auto;background:#fff;border-top:1px solid #e5e7eb;display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;background:none;padding:10px 0;font-size:12px;color:#6b7280;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav button span{font-size:20px}
+nav button.on{color:#4f46e5;font-weight:600}
+.fab{position:fixed;right:16px;bottom:78px;width:56px;height:56px;border-radius:50%;border:0;background:#4f46e5;color:#fff;font-size:30px;box-shadow:0 4px 12px rgba(0,0,0,.25)}
+.btn{width:100%;padding:12px;border-radius:12px;border:1px solid #e5e7eb;background:#fff;font-weight:600;margin-top:8px}
+.btn.pri{background:#4f46e5;color:#fff;border-color:#4f46e5}
+.btn.ok{background:#16a34a;color:#fff;border-color:#16a34a}
+.btn.sm{width:auto;padding:6px 12px;font-size:13px;margin-top:4px}
+.btn.wa{border-color:#16a34a;color:#15803d;text-decoration:none;display:block;text-align:center}
+.btn.del{border-color:#fecaca;color:#dc2626}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:50}
+.sheet{background:#fff;width:100%;max-width:480px;border-radius:24px 24px 0 0;padding:18px;max-height:92vh;overflow-y:auto}
+.sheet h2{margin:0 0 4px;font-size:18px}
+.close{float:right;background:none;border:0;font-size:24px}
+.box{background:#f9fafb;border:1px solid #f3f4f6;border-radius:16px;padding:12px;margin-top:12px}
+.field{margin-top:10px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.err{color:#dc2626;font-size:14px;margin-top:8px}
+.hist{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f3f4f6}
+.row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px}
+.big{font-size:22px}
+.login{min-height:100vh;background:#4f46e5;display:flex;align-items:center;padding:20px}
+.lcard{background:#fff;border-radius:24px;padding:20px;width:100%}
+.lcard h1{margin:0 0 12px;font-size:20px}.lcard input{margin-bottom:10px}
+.muted{text-align:center;color:#9ca3af;font-size:13px;padding:30px 0}
+label{font-size:12px;color:#6b7280}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal"></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, sendPasswordResetEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, onSnapshot, doc, addDoc, setDoc, updateDoc, deleteDoc, deleteField, FieldPath } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBfCeAJvkEhfxLgRFk4F7F1WKXwcPTzNcM",
+  authDomain: "theeta-library.firebaseapp.com",
+  projectId: "theeta-library",
+  storageBucket: "theeta-library.firebasestorage.app",
+  messagingSenderId: "695333412662",
+  appId: "1:695333412662:web:d34fb359f88958fe621d97"
+};
+// Abhi sab log staff hain. Malik ka email baad me yahan likhna (aur Rules me bhi).
+const OWNER_EMAIL = "malik-baad-me@example.com";
+
+const fb = initializeApp(firebaseConfig);
+const auth = getAuth(fb);
+const db = getFirestore(fb);
+
+// Home screen app support
+try {
+  const icon = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#4f46e5"/><text x="50" y="68" font-size="58" text-anchor="middle">📚</text></svg>');
+  const m = { name: "Library Manager", short_name: "Library", start_url: location.href, display: "standalone", background_color: "#4f46e5", theme_color: "#4f46e5", icons: [{ src: icon, sizes: "512x512", type: "image/svg+xml", purpose: "any" }] };
+  const l = document.createElement("link");
+  l.rel = "manifest";
+  l.href = URL.createObjectURL(new Blob([JSON.stringify(m)], { type: "application/manifest+json" }));
+  document.head.appendChild(l);
+} catch (e) {}
+
+const SHIFTS = ["Full Day", "Morning", "Afternoon", "Evening", "Night"];
+const CATS = ["Pani", "Bijli", "Kiraya", "Salary", "Internet", "Safai", "Repair", "Stationery", "Chai/Nashta", "Other"];
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ymOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+const todayStr = () => { const d = new Date(); return `${ymOf(d)}-${String(d.getDate()).padStart(2, "0")}`; };
+const labelOf = (ym) => { const [y, m] = ym.split("-"); return `${MONTHS[+m - 1]} ${y}`; };
+const shiftYm = (ym, n) => { const [y, m] = ym.split("-").map(Number); return ymOf(new Date(y, m - 1 + n, 1)); };
+const pd = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const fmt = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+const rs = (n) => "₹" + Math.round(+n || 0).toLocaleString("en-IN");
+
+// seat 0 (ya khali) = unreserved student
+const isRes = (s) => +s.seat > 0;
+const seatText = (s) => (isRes(s) ? `Seat ${s.seat}` : "Unreserved");
+const conflict = (a, b) => +a.seat > 0 && a.seat === b.seat && (a.shift === "Full Day" || b.shift === "Full Day" || a.shift === b.shift);
+
+const cycleStart = (join, ym) => {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, Math.min(pd(join).getDate(), new Date(y, m, 0).getDate()));
+};
+const expiryOf = (s) => {
+  const keys = Object.keys(s.payments || {}).sort();
+  if (!keys.length) return null;
+  const e = cycleStart(s.joinDate, shiftYm(keys[keys.length - 1], 1));
+  e.setDate(e.getDate() - 1);
+  return e;
+};
+const expStatus = (s) => {
+  const e = expiryOf(s);
+  if (!e) return { k: "new", label: "Fees abhi tak nahi di", days: -999 };
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  const days = Math.round((e - t) / 86400000);
+  if (days < 0) return { k: "expired", label: `${fmt(e)} ko expire (${-days} din pehle)`, days };
+  if (days === 0) return { k: "soon", label: "Aaj expire ho rahi hai", days };
+  if (days <= 3) return { k: "soon", label: `${fmt(e)} tak (${days} din baaki)`, days };
+  return { k: "ok", label: `${fmt(e)} tak valid`, days };
+};
+
+let user = null, students = [], expenses = [], expErr = false, totalSeats = 100;
+let month = ymOf(new Date()), tab = "students", filter = "all", q = "", detailId = null, formOpen = false;
+let unsubS = null, unsubC = null, unsubE = null;
+
+const isOwner = () => user && user.email.toLowerCase() === OWNER_EMAIL.toLowerCase();
+const myName = () => (user ? user.email.split("@")[0] : "");
+const isPaid = (s) => !!(s.payments && s.payments[month]);
+const activeList = () => students.filter((s) => s.joinDate.slice(0, 7) <= month);
+const alertList = () => students.filter((s) => ["soon", "expired"].includes(expStatus(s).k));
+
+// ---- Hisaab (income / kharcha / profit-loss) ----
+const incomeOf = (m) => students.reduce((t, s) => t + (s.payments && s.payments[m] ? +s.payments[m].amt || 0 : 0), 0);
+const monthExp = (m) => expenses.filter((e) => e.month === m);
+const sumAmt = (arr) => arr.reduce((t, e) => t + (+e.amt || 0), 0);
+
+function renderLogin() {
+  $("app").innerHTML = `<div class="login"><div class="lcard">
+    <h1>📚 Library Manager</h1>
+    <input id="em" type="email" placeholder="Email" autocomplete="username">
+    <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+    <div id="lerr" class="err"></div>
+    <button class="btn pri" onclick="A.login()">Login</button>
+    <button class="btn" onclick="A.forgot()">Password bhool gaye?</button>
+  </div></div>`;
+}
+
+function renderShell() {
+  $("app").innerHTML = `<div id="top"></div><div id="content"></div>
+  <button class="fab" onclick="A.fab()">+</button>
+  <nav>
+    <button data-t="students" onclick="A.setTab('students')"><span>👥</span>Students</button>
+    <button data-t="seats" onclick="A.setTab('seats')"><span>💺</span>Seats</button>
+    <button data-t="kharcha" onclick="A.setTab('kharcha')"><span>💸</span>Kharcha</button>
+    <button data-t="history" onclick="A.setTab('history')"><span>🗓️</span>History</button>
+    <button data-t="more" onclick="A.setTab('more')"><span>⚙️</span>More</button>
+  </nav>`;
+  renderTop(); renderContent();
+}
+
+function renderTop() {
+  if (!$("top")) return;
+  const act = activeList();
+  const paid = act.filter(isPaid), unpaid = act.filter((s) => !isPaid(s));
+  const collected = paid.reduce((t, s) => t + (+s.payments[month].amt || 0), 0);
+  const pending = unpaid.reduce((t, s) => t + (+s.fee || 0), 0);
+  $("top").innerHTML = `<div class="hdr">
+    <div class="hrow"><h1>📚 Library Manager</h1>
+      <div><span class="chip">${esc(myName())}</span> <button class="chip" onclick="A.logout()">Logout</button></div></div>
+    <div class="mnav"><button onclick="A.month(-1)">‹</button><b>${labelOf(month)}</b><button onclick="A.month(1)">›</button></div>
+    <div class="stats">
+      <div class="stat"><small>Mili hui fees</small><b>₹${collected}</b><small>${paid.length} students</small></div>
+      <div class="stat"><small>Baaki fees</small><b>₹${pending}</b><small>${unpaid.length} students</small></div>
+    </div></div>`;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.t === tab));
+}
+
+function itemHtml(s) {
+  const es = expStatus(s);
+  const col = es.k === "expired" || es.k === "new" ? "red" : es.k === "soon" ? "amber" : "";
+  return `<button class="item" onclick="A.detail('${s.id}')">
+    <div class="seatbox"><small>SEAT</small><b>${isRes(s) ? s.seat : "UR"}</b></div>
+    <div class="grow"><div class="nm">${esc(s.name)}</div>
+      <div class="sub">${isRes(s) ? "" : "Unreserved • "}${esc(s.shift)} • ₹${s.fee}/month</div>
+      <div class="sub ${col}">${es.label}</div></div>
+    <span class="pill ${isPaid(s) ? "p" : "u"}">${isPaid(s) ? "Paid ✓" : "Baaki"}</span></button>`;
+}
+
+function getList() {
+  const t = q.trim().toLowerCase();
+  let arr = filter === "expiring" ? alertList() : filter === "unres" ? activeList().filter((s) => !isRes(s)) : activeList();
+  arr = arr.filter((s) => (filter === "paid" ? isPaid(s) : filter === "unpaid" ? !isPaid(s) : true))
+    .filter((s) => !t || s.name.toLowerCase().includes(t) || (s.phone || "").includes(t) || (isRes(s) && String(s.seat) === t));
+  return [...arr].sort((a, b) => filter === "expiring"
+    ? expStatus(a).days - expStatus(b).days
+    : (isRes(a) ? a.seat : 9999) - (isRes(b) ? b.seat : 9999) || a.name.localeCompare(b.name));
+}
+
+function renderList() {
+  const el = $("list"); if (!el) return;
+  const arr = getList();
+  el.innerHTML = arr.length ? arr.map(itemHtml).join("") :
+    `<div class="muted">${students.length ? "Koi student nahi mila." : "Abhi koi student nahi hai. + button se pehla student add karo."}</div>`;
+}
+
+function seatState(n) {
+  const on = activeList().filter((s) => s.seat === n);
+  if (!on.length) return "vacant";
+  return on.every(isPaid) ? "paid" : "unpaid";
+}
+
+function expItem(e) {
+  return `<div class="item">
+    <div class="grow" onclick="A.openExp('${e.id}')" style="cursor:pointer">
+      <div class="nm">${esc(e.cat)}${e.payee ? " • " + esc(e.payee) : ""}</div>
+      <div class="sub">${e.date}${e.note ? " • " + esc(e.note) : ""}</div>
+      <div class="sub ${e.paid ? "green" : "amber"}">${e.paid ? "Diya gaya ✓" : "Dena baaki hai"}</div></div>
+    <div style="text-align:right"><b>${rs(e.amt)}</b>${e.paid ? "" : `<br><button class="btn ok sm" onclick="A.expPaid('${e.id}')">✓ Diya</button>`}</div>
+  </div>`;
+}
+
+function renderKharcha(c) {
+  const inc = incomeOf(month);
+  const mex = monthExp(month).sort((a, b) => b.date.localeCompare(a.date));
+  const spent = sumAmt(mex), given = sumAmt(mex.filter((e) => e.paid));
+  const net = inc - spent;
+  const pend = expenses.filter((e) => !e.paid).sort((a, b) => a.date.localeCompare(b.date));
+  const cats = {};
+  mex.forEach((e) => { cats[e.cat] = (cats[e.cat] || 0) + (+e.amt || 0); });
+  const catRows = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+  c.innerHTML = `<div class="pad">
+    ${expErr ? `<div class="alert">⚠️ Kharcha ka data load/save nahi ho raha. Firebase → Firestore → Rules me <b>expenses</b> ki permission add karo.</div>` : ""}
+    <div class="box" style="margin-top:0">
+      <b>${labelOf(month)} ka hisaab</b>
+      <div class="row"><span>Fees mili</span><b class="green">${rs(inc)}</b></div>
+      <div class="row"><span>Total kharcha</span><b class="red">${rs(spent)}</b></div>
+      <div class="sub" style="text-align:right">Diya ${rs(given)} • Dena baaki ${rs(spent - given)}</div>
+      <div class="row" style="border-top:1px solid #e5e7eb;margin-top:6px;padding-top:10px">
+        <b>${net >= 0 ? "Profit" : "Loss"}</b><b class="big ${net >= 0 ? "green" : "red"}">${rs(Math.abs(net))}</b></div>
+    </div>
+    ${pend.length ? `<div style="margin-top:16px"><b>💸 Ye payments dene baaki hain (${rs(sumAmt(pend))})</b>
+      <div style="margin-top:8px">${pend.map(expItem).join("")}</div></div>` : ""}
+    ${catRows.length ? `<div class="box"><b style="font-size:14px">Kharcha kis cheez pe</b>
+      ${catRows.map(([k, v]) => `<div class="row"><span>${esc(k)}</span><b>${rs(v)}</b></div>`).join("")}</div>` : ""}
+    <div style="margin-top:16px"><b>${labelOf(month)} ke kharche</b>
+      <div style="margin-top:8px">${mex.length ? mex.map(expItem).join("") : `<div class="muted">Is mahine koi kharcha add nahi hua.</div>`}</div></div>
+    <button class="btn pri" onclick="A.openExp()">+ Naya kharcha</button>
+  </div>`;
+}
+
+function renderContent() {
+  const c = $("content"); if (!c) return;
+  if (tab === "students") {
+    const al = alertList();
+    c.innerHTML = `<div class="pad">
+      ${al.length ? `<button class="alert" onclick="A.setFilter('expiring')">⚠️ <b>${al.length} students</b> ki fees expire ho rahi hai ya ho chuki hai. Dekhne ke liye tap karo.</button>` : ""}
+      <input id="q" placeholder="Naam / phone / seat no. search karo" value="${esc(q)}" oninput="A.search(this.value)">
+      <div class="filters">${[["all", "Sab"], ["unpaid", "Baaki"], ["paid", "Paid"], ["expiring", "⚠ Expiry"], ["unres", "Unreserved"]]
+        .map(([k, l]) => `<button class="${filter === k ? "on" : ""}" onclick="A.setFilter('${k}')">${l}</button>`).join("")}</div>
+      <div id="list"></div></div>`;
+    renderList();
+  } else if (tab === "seats") {
+    const act = activeList();
+    const seats = Array.from({ length: totalSeats }, (_, i) => i + 1);
+    const vac = seats.filter((n) => seatState(n) === "vacant").length;
+    const unres = act.filter((s) => !isRes(s));
+    const nameOf = (n) => {
+      const on = act.filter((s) => s.seat === n);
+      if (!on.length) return "";
+      const f = esc(on[0].name.trim().split(/\s+/)[0]);
+      return on.length > 1 ? `${f} +${on.length - 1}` : f;
+    };
+    c.innerHTML = `<div class="pad">
+      <div class="sub" style="margin-bottom:10px">🟩 Paid &nbsp; 🟥 Baaki &nbsp; ⬜ Khali</div>
+      <div class="grid">${seats.map((n) => `<button class="sbtn ${seatState(n)}" onclick="A.seat(${n})">${n}<small>${nameOf(n)}</small></button>`).join("")}</div>
+      <button class="item" style="margin-top:14px" onclick="A.setFilter('unres')">
+        <div class="seatbox"><small>SEAT</small><b>UR</b></div>
+        <div class="grow"><div class="nm">Unreserved students</div><div class="sub">Bina fixed seat wale — tap karke list dekho</div></div>
+        <b>${unres.length}</b></button>
+      <div class="muted">Khali seat pe tap = naya student. Bhari seat pe tap = details.<br>Khali seats: ${vac} / ${totalSeats}</div></div>`;
+  } else if (tab === "kharcha") {
+    renderKharcha(c);
+  } else if (tab === "history") {
+    const map = {};
+    const row = (m) => (map[m] = map[m] || { m, n: 0, inc: 0, exp: 0 });
+    students.forEach((s) => Object.entries(s.payments || {}).forEach(([m, p]) => { const r = row(m); r.n++; r.inc += +p.amt || 0; }));
+    expenses.forEach((e) => { row(e.month).exp += +e.amt || 0; });
+    const rows = Object.values(map).sort((a, b) => b.m.localeCompare(a.m));
+    const tot = rows.reduce((t, r) => t + r.inc - r.exp, 0);
+    c.innerHTML = `<div class="pad"><b>Mahine-wise hisaab</b>
+      ${rows.length ? `<div class="sub">Ab tak ka kul ${tot >= 0 ? "profit" : "loss"}: <b class="${tot >= 0 ? "green" : "red"}">${rs(Math.abs(tot))}</b></div>` : ""}
+      <div style="margin-top:10px">
+      ${rows.length ? rows.map((r) => { const net = r.inc - r.exp; return `<button class="item" onclick="A.goMonth('${r.m}')">
+        <div class="grow"><div class="nm">${labelOf(r.m)}</div>
+          <div class="sub">Fees ${rs(r.inc)} (${r.n} students) • Kharcha ${rs(r.exp)}</div></div>
+        <div style="text-align:right"><b class="${net >= 0 ? "green" : "red"}">${rs(Math.abs(net))}</b><div class="sub">${net >= 0 ? "Profit" : "Loss"}</div></div></button>`; }).join("") : `<div class="muted">Abhi koi record nahi hai.</div>`}
+      </div><div class="muted">Mahine pe tap karke us mahine ki poori list dekho.</div></div>`;
+  } else {
+    c.innerHTML = `<div class="pad">
+      <div class="box" style="margin-top:0"><b>Download</b>
+        <button class="btn" onclick="A.csv()">⬇ ${labelOf(month)} ki students CSV</button>
+        <button class="btn" onclick="A.csvExp()">⬇ ${labelOf(month)} ka kharcha CSV</button></div>
+      <div class="box"><b>Account</b>
+        <button class="btn" onclick="A.openPw()">🔑 Password badlo</button></div>
+      ${isOwner() ? `<div class="box"><b>Total seats</b>
+        <input type="number" value="${totalSeats}" onchange="A.setSeats(this.value)" style="margin-top:8px"></div>` : ""}
+      <div class="muted">Login: ${esc(user.email)} (${isOwner() ? "Malik" : "Staff"})<br>Data sab devices pe live sync hota hai.</div></div>`;
+  }
+}
+
+function waLink(s) {
+  const ph = (s.phone || "").replace(/\D/g, "");
+  const e = expiryOf(s);
+  const t = expStatus(s).k !== "ok" && e
+    ? `Namaste ${s.name}, aapki library ki fees ${fmt(e)} ko expire ho rahi hai/ho chuki hai (${seatText(s)}, Rs.${s.fee}). Kripya renew karein. Dhanyawad.`
+    : `Namaste ${s.name}, aapki library ki ${labelOf(month)} ki fees Rs.${s.fee} baaki hai (${seatText(s)}). Kripya jaldi jama karein. Dhanyawad.`;
+  return `https://wa.me/${ph.length === 10 ? "91" + ph : ph}?text=${encodeURIComponent(t)}`;
+}
+
+function renderDetail() {
+  const s = students.find((x) => x.id === detailId);
+  if (!s) { $("modal").innerHTML = ""; detailId = null; return; }
+  const es = expStatus(s);
+  const p = s.payments && s.payments[month];
+  const hist = Object.keys(s.payments || {}).sort().reverse();
+  $("modal").innerHTML = `<div class="overlay"><div class="sheet">
+    <button class="close" onclick="A.closeModal()">×</button>
+    <h2>${esc(s.name)}</h2>
+    <div class="sub">${seatText(s)} • ${esc(s.shift)} • ₹${s.fee}/month</div>
+    ${s.phone ? `<div class="sub">📞 ${esc(s.phone)}</div>` : ""}
+    <div class="sub">Joined: ${s.joinDate}</div>
+    <div class="${es.k === "ok" ? "green" : "red"}" style="font-size:14px;font-weight:600;margin-top:4px">Expiry: ${es.label}</div>
+    <div class="box"><b style="font-size:14px">${labelOf(month)} ki fees</b>
+      ${p ? `<div class="green" style="font-weight:600;margin-top:6px">✓ ₹${p.amt} mil gaye</div>
+        <div class="sub">${esc(p.mode)} • ${p.date}${p.by ? ` • ${esc(p.by)} ne liya` : ""}</div>
+        <button class="btn del" onclick="A.undo('${s.id}')">Galti se mark hui? Wapas baaki karo</button>`
+      : `<div class="two field"><input id="pamt" type="number" value="${s.fee}">
+          <select id="pmode"><option>Cash</option><option>UPI</option><option>Other</option></select></div>
+         <button class="btn ok" onclick="A.pay('${s.id}')">✓ Fees mil gayi</button>`}
+      ${s.phone ? `<a class="btn wa" href="${waLink(s)}" target="_blank" rel="noreferrer">💬 WhatsApp reminder bhejo</a>` : ""}
+    </div>
+    <div style="margin-top:14px"><b style="font-size:14px">Payment history</b>
+      ${hist.length ? hist.map((m) => `<div class="hist"><span>${labelOf(m)}</span><span class="sub">₹${s.payments[m].amt} • ${esc(s.payments[m].mode)} • ${s.payments[m].date}</span></div>`).join("") : `<div class="sub">Abhi koi payment nahi.</div>`}
+    </div>
+    <div class="two" style="margin-top:6px"><button class="btn" onclick="A.openForm('','${s.id}')">✏️ Edit</button>
+      <button class="btn del" onclick="A.remove('${s.id}')">🗑 Hatao</button></div>
+  </div></div>`;
+}
+
+function renderForm(seat, id) {
+  const s = id ? students.find((x) => x.id === id) : null;
+  const unres = !!s && !isRes(s);
+  formOpen = true;
+  $("modal").innerHTML = `<div class="overlay"><div class="sheet">
+    <button class="close" onclick="A.closeModal()">×</button>
+    <h2>${s ? "Student edit karo" : "Naya student"}</h2>
+    <div class="field"><input id="fn" placeholder="Naam" value="${esc(s ? s.name : "")}"></div>
+    <div class="field"><input id="fp" placeholder="Phone number" inputmode="numeric" value="${esc(s ? s.phone : "")}"></div>
+    <div class="field"><label>Seat type</label>
+      <select id="ft" onchange="A.seatType()">
+        <option value="r" ${unres ? "" : "selected"}>Reserved (fixed seat)</option>
+        <option value="u" ${unres ? "selected" : ""}>Unreserved (koi bhi seat)</option>
+      </select></div>
+    <div class="two field"><input id="fs" type="number" placeholder="Seat no." value="${s ? (isRes(s) ? s.seat : "") : seat || ""}">
+      <input id="ff" type="number" placeholder="Monthly fees ₹" value="${s ? s.fee : ""}"></div>
+    <div class="field"><select id="fh">${SHIFTS.map((x) => `<option ${s && s.shift === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+    <div class="field"><label>Joining date (isi din se har mahine ki fees cycle chalegi)</label>
+      <input id="fd" type="date" value="${s ? s.joinDate : todayStr()}"></div>
+    <div id="ferr" class="err"></div>
+    <button class="btn pri" onclick="A.save('${id || ""}')">Save karo</button>
+  </div></div>`;
+  A.seatType();
+}
+
+function renderExpForm(id) {
+  const e = id ? expenses.find((x) => x.id === id) : null;
+  formOpen = true; detailId = null;
+  $("modal").innerHTML = `<div class="overlay"><div class="sheet">
+    <button class="close" onclick="A.closeModal()">×</button>
+    <h2>${e ? "Kharcha edit karo" : "Naya kharcha"}</h2>
+    <div class="field"><label>Kharcha kis cheez ka?</label>
+      <select id="ec">${CATS.map((x) => `<option ${e && e.cat === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+    <div class="two field"><input id="ea" type="number" inputmode="decimal" placeholder="Amount ₹" value="${e ? e.amt : ""}">
+      <input id="ed" type="date" value="${e ? e.date : todayStr()}"></div>
+    <div class="field"><input id="ep" placeholder="Kisko dena hai / kisko diya (naam)" value="${esc(e ? e.payee : "")}"></div>
+    <div class="field"><input id="en" placeholder="Note (optional)" value="${esc(e ? e.note : "")}"></div>
+    <div class="field"><select id="es">
+      <option value="1" ${!e || e.paid ? "selected" : ""}>✓ Payment kar di</option>
+      <option value="0" ${e && !e.paid ? "selected" : ""}>⏳ Abhi dena baaki hai</option></select></div>
+    <div id="ferr" class="err"></div>
+    <button class="btn pri" onclick="A.saveExp('${id || ""}')">Save karo</button>
+    ${e ? `<button class="btn del" onclick="A.delExp('${id}')">🗑 Hatao</button>` : ""}
+  </div></div>`;
+}
+
+function renderPwForm() {
+  formOpen = true; detailId = null;
+  $("modal").innerHTML = `<div class="overlay"><div class="sheet">
+    <button class="close" onclick="A.closeModal()">×</button>
+    <h2>Password badlo</h2>
+    <div class="field"><input id="po" type="password" placeholder="Purana password" autocomplete="current-password"></div>
+    <div class="field"><input id="pn" type="password" placeholder="Naya password (kam se kam 6 akshar)" autocomplete="new-password"></div>
+    <div class="field"><input id="pc" type="password" placeholder="Naya password dobara likho" autocomplete="new-password"></div>
+    <div id="ferr" class="err"></div>
+    <button class="btn pri" onclick="A.changePw()">Password badlo</button>
+  </div></div>`;
+}
+
+function refreshUI() {
+  if (!user) return;
+  renderTop();
+  if (document.activeElement && document.activeElement.id === "q") renderList();
+  else renderContent();
+  if (detailId && !formOpen) renderDetail();
+}
+
+function download(rows, name) {
+  const csv = rows.map((r) => r.map((c) => `"${c ?? ""}"`).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv" }));
+  a.download = name; a.click();
+}
+
+const A = {
+  login: async () => {
+    try { await signInWithEmailAndPassword(auth, $("em").value.trim(), $("pw").value); }
+    catch (e) { $("lerr").style.color = ""; $("lerr").textContent = "Email ya password galat hai"; }
+  },
+  forgot: async () => {
+    const em = $("em").value.trim(), el = $("lerr");
+    el.style.color = "";
+    if (!em) { el.textContent = "Pehle upar apna email likho, phir 'Password bhool gaye?' dabao"; return; }
+    try {
+      await sendPasswordResetEmail(auth, em);
+      el.style.color = "#15803d";
+      el.textContent = "Password reset link email par bhej diya. Inbox ya spam folder check karo.";
+    } catch (e) { el.textContent = "Link nahi bhej paaye. Email sahi hai? Internet check karo."; }
+  },
+  openPw: () => renderPwForm(),
+  changePw: async () => {
+    const err = (m, ok) => { const e = $("ferr"); e.textContent = m; e.style.color = ok ? "#15803d" : ""; };
+    const o = $("po").value, n = $("pn").value, c = $("pc").value;
+    if (!o) return err("Purana password likho");
+    if (n.length < 6) return err("Naya password kam se kam 6 akshar ka ho");
+    if (n !== c) return err("Dono naye password same nahi hain");
+    if (n === o) return err("Naya password purane se alag rakho");
+    try {
+      await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(auth.currentUser.email, o));
+      await updatePassword(auth.currentUser, n);
+      err("Password badal gaya ✓", true);
+      setTimeout(A.closeModal, 1500);
+    } catch (e) {
+      const bad = ["auth/wrong-password", "auth/invalid-credential", "auth/invalid-login-credentials"].includes(e.code);
+      err(bad ? "Purana password galat hai" : "Password nahi badla. Internet check karo ya thodi der baad try karo.");
+    }
+  },
+  logout: () => signOut(auth),
+  setTab: (t) => { tab = t; if (t === "students") q = ""; renderTop(); renderContent(); },
+  fab: () => { if (tab === "kharcha") A.openExp(); else A.openForm(); },
+  month: (n) => { month = shiftYm(month, n); refreshUI(); },
+  goMonth: (m) => { month = m; filter = "all"; tab = "students"; renderTop(); renderContent(); },
+  setFilter: (f) => { filter = f; q = ""; tab = "students"; renderTop(); renderContent(); },
+  search: (v) => { q = v; renderList(); },
+  seat: (n) => {
+    if (seatState(n) === "vacant") A.openForm(n);
+    else { q = String(n); filter = "all"; tab = "students"; renderTop(); renderContent(); }
+  },
+  detail: (id) => { detailId = id; formOpen = false; renderDetail(); },
+  closeModal: () => { $("modal").innerHTML = ""; detailId = null; formOpen = false; },
+  openForm: (seat, id) => renderForm(seat, id),
+  seatType: () => {
+    const u = $("ft").value === "u";
+    $("fs").disabled = u;
+    $("fs").style.opacity = u ? 0.4 : 1;
+    if (u) $("fs").value = "";
+  },
+  save: async (id) => {
+    const un = $("ft").value === "u";
+    const f = { name: $("fn").value.trim(), phone: $("fp").value.trim(), seat: un ? 0 : +$("fs").value, fee: +$("ff").value, shift: $("fh").value, joinDate: $("fd").value };
+    const err = (m) => { $("ferr").textContent = m; };
+    if (!f.name) return err("Naam likho");
+    if (!un && (!f.seat || f.seat < 1 || f.seat > totalSeats)) return err(`Seat 1 se ${totalSeats} ke beech honi chahiye`);
+    if (!f.fee) return err("Fees likho");
+    if (!f.joinDate) return err("Joining date chuno");
+    const clash = !un && students.find((s) => s.id !== id && conflict(s, f));
+    if (clash) return err(`Seat ${f.seat} (${clash.shift}) pe ${clash.name} pehle se hai`);
+    try {
+      if (id) await updateDoc(doc(db, "students", id), f);
+      else await addDoc(collection(db, "students"), { ...f, payments: {} });
+      A.closeModal();
+    } catch (e) { err("Save nahi hua. Internet check karo."); }
+  },
+  pay: async (id) => {
+    const s = students.find((x) => x.id === id);
+    const amt = +$("pamt").value || +s.fee;
+    await updateDoc(doc(db, "students", id), new FieldPath("payments", month), { amt, mode: $("pmode").value, date: todayStr(), by: myName() });
+    A.closeModal();
+  },
+  undo: async (id) => {
+    await updateDoc(doc(db, "students", id), new FieldPath("payments", month), deleteField());
+    A.closeModal();
+  },
+  remove: async (id) => {
+    if (!confirm("Pakka is student ko hatana hai? Uska poora record chala jayega.")) return;
+    await deleteDoc(doc(db, "students", id));
+    A.closeModal();
+  },
+  // ---- Kharcha ----
+  openExp: (id) => renderExpForm(id),
+  saveExp: async (id) => {
+    const err = (m) => { $("ferr").textContent = m; };
+    const amt = +$("ea").value, date = $("ed").value, paid = $("es").value === "1";
+    if (!amt || amt <= 0) return err("Amount likho");
+    if (!date) return err("Date chuno");
+    const old = id ? expenses.find((x) => x.id === id) : null;
+    const f = {
+      cat: $("ec").value, amt, date, month: date.slice(0, 7),
+      payee: $("ep").value.trim(), note: $("en").value.trim(), paid,
+      paidDate: paid ? (old && old.paid && old.paidDate) || todayStr() : "",
+      by: (old && old.by) || myName()
+    };
+    try {
+      if (id) await updateDoc(doc(db, "expenses", id), f);
+      else await addDoc(collection(db, "expenses"), f);
+      A.closeModal();
+    } catch (e) { err("Save nahi hua. Internet ya Firestore Rules check karo."); }
+  },
+  expPaid: async (id) => {
+    try { await updateDoc(doc(db, "expenses", id), { paid: true, paidDate: todayStr() }); }
+    catch (e) { alert("Save nahi hua. Internet ya Firestore Rules check karo."); }
+  },
+  delExp: async (id) => {
+    if (!confirm("Is kharche ko hatana hai?")) return;
+    await deleteDoc(doc(db, "expenses", id));
+    A.closeModal();
+  },
+  setSeats: async (v) => { await setDoc(doc(db, "settings", "main"), { totalSeats: Math.max(1, +v || 1) }); },
+  csv: () => {
+    const rows = [["Seat", "Naam", "Phone", "Shift", "Fees", "Month", "Status", "Amount", "Mode", "Date", "Liya", "Expiry"]];
+    [...activeList()].sort((a, b) => (isRes(a) ? a.seat : 9999) - (isRes(b) ? b.seat : 9999)).forEach((s) => {
+      const p = s.payments && s.payments[month], e = expiryOf(s);
+      rows.push([isRes(s) ? s.seat : "Unreserved", s.name, s.phone, s.shift, s.fee, labelOf(month), p ? "Paid" : "Baaki", p ? p.amt : "", p ? p.mode : "", p ? p.date : "", p ? p.by || "" : "", e ? fmt(e) : ""]);
+    });
+    download(rows, `library-${month}.csv`);
+  },
+  csvExp: () => {
+    const rows = [["Date", "Cheez", "Kisko", "Note", "Amount", "Status", "Diya kab"]];
+    monthExp(month).sort((a, b) => a.date.localeCompare(b.date)).forEach((e) => {
+      rows.push([e.date, e.cat, e.payee, e.note, e.amt, e.paid ? "Diya" : "Baaki", e.paidDate || ""]);
+    });
+    const inc = incomeOf(month), spent = sumAmt(monthExp(month));
+    rows.push([], ["", "Fees mili", "", "", inc], ["", "Total kharcha", "", "", spent], ["", inc - spent >= 0 ? "Profit" : "Loss", "", "", Math.abs(inc - spent)]);
+    download(rows, `kharcha-${month}.csv`);
+  }
+};
+window.A = A;
+
+onAuthStateChanged(auth, (u) => {
+  user = u;
+  if (unsubS) { unsubS(); unsubS = null; }
+  if (unsubC) { unsubC(); unsubC = null; }
+  if (unsubE) { unsubE(); unsubE = null; }
+  $("modal").innerHTML = "";
+  if (!u) { students = []; expenses = []; renderLogin(); return; }
+  renderShell();
+  unsubS = onSnapshot(collection(db, "students"), (snap) => {
+    students = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    refreshUI();
+  });
+  unsubC = onSnapshot(doc(db, "settings", "main"), (s) => {
+    totalSeats = s.exists() ? Math.max(100, s.data().totalSeats || 100) : 100;
+    refreshUI();
+  });
+  unsubE = onSnapshot(collection(db, "expenses"), (snap) => {
+    expErr = false;
+    expenses = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    refreshUI();
+  }, () => { expErr = true; refreshUI(); });
+});
+</script>
+</body>
+</html>
