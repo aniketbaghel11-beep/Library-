@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="hi">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -69,11 +69,18 @@ nav button.on{color:#4f46e5;font-weight:600}
 .lcard h1{margin:0 0 12px;font-size:20px}.lcard input{margin-bottom:10px}
 .muted{text-align:center;color:#9ca3af;font-size:13px;padding:30px 0}
 label{font-size:12px;color:#6b7280}
+.av{position:relative;width:48px;height:48px;flex-shrink:0}
+.ph{border-radius:50%;object-fit:cover;background:#eef2ff;color:#4338ca;display:flex;align-items:center;justify-content:center;font-weight:700}
+.av .ph{width:48px;height:48px;font-size:18px}
+.av .sb{position:absolute;right:-6px;bottom:-4px;background:#4f46e5;color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:1px 6px;border:2px solid #fff;line-height:1.3}
+#zoom .overlay{z-index:70;align-items:center;background:rgba(0,0,0,.85)}
+#zoom img{max-width:94vw;max-height:88vh;border-radius:16px}
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="modal"></div>
+<div id="zoom"></div>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -106,7 +113,9 @@ try {
 } catch (e) {}
 
 const SHIFTS = ["Full Day", "Morning", "Afternoon", "Evening", "Night"];
-const CATS = ["Pani", "Bijli", "Kiraya", "Salary", "Internet", "Safai", "Repair", "Stationery", "Chai/Nashta", "Other"];
+const CATS = ["Water", "Electricity", "Rent", "Salary", "Internet", "Cleaning", "Repair", "Stationery", "Tea/Snacks", "Other"];
+const LEGACY = { Pani: "Water", Bijli: "Electricity", Kiraya: "Rent", Safai: "Cleaning", "Chai/Nashta": "Tea/Snacks" };
+const catEn = (c) => LEGACY[c] || c;
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -116,6 +125,32 @@ const labelOf = (ym) => { const [y, m] = ym.split("-"); return `${MONTHS[+m - 1]
 const shiftYm = (ym, n) => { const [y, m] = ym.split("-").map(Number); return ymOf(new Date(y, m - 1 + n, 1)); };
 const pd = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
 const fmt = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+const HMONTHS = ["जनवरी","फ़रवरी","मार्च","अप्रैल","मई","जून","जुलाई","अगस्त","सितंबर","अक्टूबर","नवंबर","दिसंबर"];
+const fmtY = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+const fmtHi = (d) => `${d.getDate()} ${HMONTHS[d.getMonth()]} ${d.getFullYear()}`;
+const LIB = "Theeta Library", LIB_HI = "थीटा लाइब्रेरी";
+const avatar = (s, size) => {
+  const st = size ? `width:${size}px;height:${size}px;font-size:${Math.round(size / 2.6)}px` : "";
+  return s.photo
+    ? `<img class="ph" style="${st}" src="${s.photo}" alt="">`
+    : `<div class="ph" style="${st}">${esc((s.name || "?").trim().charAt(0).toUpperCase())}</div>`;
+};
+const maskAad = (a) => "•••• •••• " + String(a).slice(-4);
+const fullAad = (a) => String(a).replace(/(\d{4})(?=\d)/g, "$1 ");
+const shrink = (file) => new Promise((res, rej) => {
+  const img = new Image(), url = URL.createObjectURL(file);
+  img.onload = () => {
+    const r = Math.min(1, 360 / Math.max(img.width, img.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.width * r); c.height = Math.round(img.height * r);
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    res(c.toDataURL("image/jpeg", 0.72));
+  };
+  img.onerror = rej;
+  img.src = url;
+});
+const dn = (n) => `${n} day${n === 1 ? "" : "s"}`;
 const rs = (n) => "₹" + Math.round(+n || 0).toLocaleString("en-IN");
 
 // seat 0 (ya khali) = unreserved student
@@ -130,22 +165,21 @@ const cycleStart = (join, ym) => {
 const expiryOf = (s) => {
   const keys = Object.keys(s.payments || {}).sort();
   if (!keys.length) return null;
-  const e = cycleStart(s.joinDate, shiftYm(keys[keys.length - 1], 1));
-  e.setDate(e.getDate() - 1);
-  return e;
+  // Expiry = admission wali date se agle mahine ki usi date (jaise 7 ko join kiya to expiry 7 ko)
+  return cycleStart(s.joinDate, shiftYm(keys[keys.length - 1], 1));
 };
 const expStatus = (s) => {
   const e = expiryOf(s);
-  if (!e) return { k: "new", label: "Fees abhi tak nahi di", days: -999 };
+  if (!e) return { k: "new", label: "No fees paid yet", days: -999 };
   const t = new Date(); t.setHours(0, 0, 0, 0);
   const days = Math.round((e - t) / 86400000);
-  if (days < 0) return { k: "expired", label: `${fmt(e)} ko expire (${-days} din pehle)`, days };
-  if (days === 0) return { k: "soon", label: "Aaj expire ho rahi hai", days };
-  if (days <= 3) return { k: "soon", label: `${fmt(e)} tak (${days} din baaki)`, days };
-  return { k: "ok", label: `${fmt(e)} tak valid`, days };
+  if (days < 0) return { k: "expired", label: `Expiry: ${fmtY(e)} (expired ${dn(-days)} ago)`, days };
+  if (days === 0) return { k: "soon", label: `Expiry: ${fmtY(e)} (expires today)`, days };
+  if (days <= 3) return { k: "soon", label: `Expiry: ${fmtY(e)} (${dn(days)} left)`, days };
+  return { k: "ok", label: `Expiry: ${fmtY(e)} (${dn(days)} left)`, days };
 };
 
-let user = null, students = [], expenses = [], expErr = false, totalSeats = 100;
+let user = null, students = [], expenses = [], expErr = false, totalSeats = 100, formPhoto = "";
 let month = ymOf(new Date()), tab = "students", filter = "all", q = "", detailId = null, formOpen = false;
 let unsubS = null, unsubC = null, unsubE = null;
 
@@ -167,7 +201,7 @@ function renderLogin() {
     <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
     <div id="lerr" class="err"></div>
     <button class="btn pri" onclick="A.login()">Login</button>
-    <button class="btn" onclick="A.forgot()">Password bhool gaye?</button>
+    <button class="btn" onclick="A.forgot()">Forgot password?</button>
   </div></div>`;
 }
 
@@ -177,7 +211,7 @@ function renderShell() {
   <nav>
     <button data-t="students" onclick="A.setTab('students')"><span>👥</span>Students</button>
     <button data-t="seats" onclick="A.setTab('seats')"><span>💺</span>Seats</button>
-    <button data-t="kharcha" onclick="A.setTab('kharcha')"><span>💸</span>Kharcha</button>
+    <button data-t="kharcha" onclick="A.setTab('kharcha')"><span>💸</span>Expenses</button>
     <button data-t="history" onclick="A.setTab('history')"><span>🗓️</span>History</button>
     <button data-t="more" onclick="A.setTab('more')"><span>⚙️</span>More</button>
   </nav>`;
@@ -195,8 +229,8 @@ function renderTop() {
       <div><span class="chip">${esc(myName())}</span> <button class="chip" onclick="A.logout()">Logout</button></div></div>
     <div class="mnav"><button onclick="A.month(-1)">‹</button><b>${labelOf(month)}</b><button onclick="A.month(1)">›</button></div>
     <div class="stats">
-      <div class="stat"><small>Mili hui fees</small><b>₹${collected}</b><small>${paid.length} students</small></div>
-      <div class="stat"><small>Baaki fees</small><b>₹${pending}</b><small>${unpaid.length} students</small></div>
+      <div class="stat"><small>Fees collected</small><b>₹${collected}</b><small>${paid.length} students</small></div>
+      <div class="stat"><small>Pending fees</small><b>₹${pending}</b><small>${unpaid.length} students</small></div>
     </div></div>`;
   document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.t === tab));
 }
@@ -205,11 +239,11 @@ function itemHtml(s) {
   const es = expStatus(s);
   const col = es.k === "expired" || es.k === "new" ? "red" : es.k === "soon" ? "amber" : "";
   return `<button class="item" onclick="A.detail('${s.id}')">
-    <div class="seatbox"><small>SEAT</small><b>${isRes(s) ? s.seat : "UR"}</b></div>
+    <div class="av">${avatar(s)}<span class="sb">${isRes(s) ? s.seat : "UR"}</span></div>
     <div class="grow"><div class="nm">${esc(s.name)}</div>
       <div class="sub">${isRes(s) ? "" : "Unreserved • "}${esc(s.shift)} • ₹${s.fee}/month</div>
       <div class="sub ${col}">${es.label}</div></div>
-    <span class="pill ${isPaid(s) ? "p" : "u"}">${isPaid(s) ? "Paid ✓" : "Baaki"}</span></button>`;
+    <span class="pill ${isPaid(s) ? "p" : "u"}">${isPaid(s) ? "Paid ✓" : "Due"}</span></button>`;
 }
 
 function getList() {
@@ -226,7 +260,7 @@ function renderList() {
   const el = $("list"); if (!el) return;
   const arr = getList();
   el.innerHTML = arr.length ? arr.map(itemHtml).join("") :
-    `<div class="muted">${students.length ? "Koi student nahi mila." : "Abhi koi student nahi hai. + button se pehla student add karo."}</div>`;
+    `<div class="muted">${students.length ? "No students found." : "No students yet. Tap + to add the first student."}</div>`;
 }
 
 function seatState(n) {
@@ -238,10 +272,10 @@ function seatState(n) {
 function expItem(e) {
   return `<div class="item">
     <div class="grow" onclick="A.openExp('${e.id}')" style="cursor:pointer">
-      <div class="nm">${esc(e.cat)}${e.payee ? " • " + esc(e.payee) : ""}</div>
+      <div class="nm">${esc(catEn(e.cat))}${e.payee ? " • " + esc(e.payee) : ""}</div>
       <div class="sub">${e.date}${e.note ? " • " + esc(e.note) : ""}</div>
-      <div class="sub ${e.paid ? "green" : "amber"}">${e.paid ? "Diya gaya ✓" : "Dena baaki hai"}</div></div>
-    <div style="text-align:right"><b>${rs(e.amt)}</b>${e.paid ? "" : `<br><button class="btn ok sm" onclick="A.expPaid('${e.id}')">✓ Diya</button>`}</div>
+      <div class="sub ${e.paid ? "green" : "amber"}">${e.paid ? "Paid ✓" : "To be paid"}</div></div>
+    <div style="text-align:right"><b>${rs(e.amt)}</b>${e.paid ? "" : `<br><button class="btn ok sm" onclick="A.expPaid('${e.id}')">✓ Paid</button>`}</div>
   </div>`;
 }
 
@@ -252,25 +286,25 @@ function renderKharcha(c) {
   const net = inc - spent;
   const pend = expenses.filter((e) => !e.paid).sort((a, b) => a.date.localeCompare(b.date));
   const cats = {};
-  mex.forEach((e) => { cats[e.cat] = (cats[e.cat] || 0) + (+e.amt || 0); });
+  mex.forEach((e) => { cats[catEn(e.cat)] = (cats[catEn(e.cat)] || 0) + (+e.amt || 0); });
   const catRows = Object.entries(cats).sort((a, b) => b[1] - a[1]);
   c.innerHTML = `<div class="pad">
-    ${expErr ? `<div class="alert">⚠️ Kharcha ka data load/save nahi ho raha. Firebase → Firestore → Rules me <b>expenses</b> ki permission add karo.</div>` : ""}
+    ${expErr ? `<div class="alert">⚠️ Expenses data is not loading/saving. Add permission for <b>expenses</b> in Firebase → Firestore → Rules.</div>` : ""}
     <div class="box" style="margin-top:0">
-      <b>${labelOf(month)} ka hisaab</b>
-      <div class="row"><span>Fees mili</span><b class="green">${rs(inc)}</b></div>
-      <div class="row"><span>Total kharcha</span><b class="red">${rs(spent)}</b></div>
-      <div class="sub" style="text-align:right">Diya ${rs(given)} • Dena baaki ${rs(spent - given)}</div>
+      <b>${labelOf(month)} summary</b>
+      <div class="row"><span>Fees collected</span><b class="green">${rs(inc)}</b></div>
+      <div class="row"><span>Total expenses</span><b class="red">${rs(spent)}</b></div>
+      <div class="sub" style="text-align:right">Paid ${rs(given)} • Pending ${rs(spent - given)}</div>
       <div class="row" style="border-top:1px solid #e5e7eb;margin-top:6px;padding-top:10px">
         <b>${net >= 0 ? "Profit" : "Loss"}</b><b class="big ${net >= 0 ? "green" : "red"}">${rs(Math.abs(net))}</b></div>
     </div>
-    ${pend.length ? `<div style="margin-top:16px"><b>💸 Ye payments dene baaki hain (${rs(sumAmt(pend))})</b>
+    ${pend.length ? `<div style="margin-top:16px"><b>💸 Payments still to be made (${rs(sumAmt(pend))})</b>
       <div style="margin-top:8px">${pend.map(expItem).join("")}</div></div>` : ""}
-    ${catRows.length ? `<div class="box"><b style="font-size:14px">Kharcha kis cheez pe</b>
+    ${catRows.length ? `<div class="box"><b style="font-size:14px">Spending by category</b>
       ${catRows.map(([k, v]) => `<div class="row"><span>${esc(k)}</span><b>${rs(v)}</b></div>`).join("")}</div>` : ""}
-    <div style="margin-top:16px"><b>${labelOf(month)} ke kharche</b>
-      <div style="margin-top:8px">${mex.length ? mex.map(expItem).join("") : `<div class="muted">Is mahine koi kharcha add nahi hua.</div>`}</div></div>
-    <button class="btn pri" onclick="A.openExp()">+ Naya kharcha</button>
+    <div style="margin-top:16px"><b>${labelOf(month)} expenses</b>
+      <div style="margin-top:8px">${mex.length ? mex.map(expItem).join("") : `<div class="muted">No expenses added this month.</div>`}</div></div>
+    <button class="btn pri" onclick="A.openExp()">+ New expense</button>
   </div>`;
 }
 
@@ -279,9 +313,9 @@ function renderContent() {
   if (tab === "students") {
     const al = alertList();
     c.innerHTML = `<div class="pad">
-      ${al.length ? `<button class="alert" onclick="A.setFilter('expiring')">⚠️ <b>${al.length} students</b> ki fees expire ho rahi hai ya ho chuki hai. Dekhne ke liye tap karo.</button>` : ""}
-      <input id="q" placeholder="Naam / phone / seat no. search karo" value="${esc(q)}" oninput="A.search(this.value)">
-      <div class="filters">${[["all", "Sab"], ["unpaid", "Baaki"], ["paid", "Paid"], ["expiring", "⚠ Expiry"], ["unres", "Unreserved"]]
+      ${al.length ? `<button class="alert" onclick="A.setFilter('expiring')">⚠️ <b>${al.length} students</b> have fees expiring or already expired. Tap to view.</button>` : ""}
+      <input id="q" placeholder="Search name / phone / seat no." value="${esc(q)}" oninput="A.search(this.value)">
+      <div class="filters">${[["all", "All"], ["unpaid", "Due"], ["paid", "Paid"], ["expiring", "⚠ Expiring"], ["unres", "Unreserved"]]
         .map(([k, l]) => `<button class="${filter === k ? "on" : ""}" onclick="A.setFilter('${k}')">${l}</button>`).join("")}</div>
       <div id="list"></div></div>`;
     renderList();
@@ -297,49 +331,64 @@ function renderContent() {
       return on.length > 1 ? `${f} +${on.length - 1}` : f;
     };
     c.innerHTML = `<div class="pad">
-      <div class="sub" style="margin-bottom:10px">🟩 Paid &nbsp; 🟥 Baaki &nbsp; ⬜ Khali</div>
+      <div class="sub" style="margin-bottom:10px">🟩 Paid &nbsp; 🟥 Due &nbsp; ⬜ Vacant</div>
       <div class="grid">${seats.map((n) => `<button class="sbtn ${seatState(n)}" onclick="A.seat(${n})">${n}<small>${nameOf(n)}</small></button>`).join("")}</div>
       <button class="item" style="margin-top:14px" onclick="A.setFilter('unres')">
         <div class="seatbox"><small>SEAT</small><b>UR</b></div>
-        <div class="grow"><div class="nm">Unreserved students</div><div class="sub">Bina fixed seat wale — tap karke list dekho</div></div>
+        <div class="grow"><div class="nm">Unreserved students</div><div class="sub">Students without a fixed seat — tap to see the list</div></div>
         <b>${unres.length}</b></button>
-      <div class="muted">Khali seat pe tap = naya student. Bhari seat pe tap = details.<br>Khali seats: ${vac} / ${totalSeats}</div></div>`;
+      <div class="muted">Tap a vacant seat = new student. Tap an occupied seat = details.<br>Vacant seats: ${vac} / ${totalSeats}</div></div>`;
   } else if (tab === "kharcha") {
     renderKharcha(c);
   } else if (tab === "history") {
     const map = {};
     const row = (m) => (map[m] = map[m] || { m, n: 0, inc: 0, exp: 0 });
-    students.forEach((s) => Object.entries(s.payments || {}).forEach(([m, p]) => { const r = row(m); r.n++; r.inc += +p.amt || 0; }));
+    students.forEach((s) => Object.entries(s.payments || {}).forEach(([m, p]) => { if (p.covered) return; const r = row(m); r.n++; r.inc += +p.amt || 0; }));
     expenses.forEach((e) => { row(e.month).exp += +e.amt || 0; });
     const rows = Object.values(map).sort((a, b) => b.m.localeCompare(a.m));
     const tot = rows.reduce((t, r) => t + r.inc - r.exp, 0);
-    c.innerHTML = `<div class="pad"><b>Mahine-wise hisaab</b>
-      ${rows.length ? `<div class="sub">Ab tak ka kul ${tot >= 0 ? "profit" : "loss"}: <b class="${tot >= 0 ? "green" : "red"}">${rs(Math.abs(tot))}</b></div>` : ""}
+    c.innerHTML = `<div class="pad"><b>Month-wise summary</b>
+      ${rows.length ? `<div class="sub">Total ${tot >= 0 ? "profit" : "loss"} so far: <b class="${tot >= 0 ? "green" : "red"}">${rs(Math.abs(tot))}</b></div>` : ""}
       <div style="margin-top:10px">
       ${rows.length ? rows.map((r) => { const net = r.inc - r.exp; return `<button class="item" onclick="A.goMonth('${r.m}')">
         <div class="grow"><div class="nm">${labelOf(r.m)}</div>
-          <div class="sub">Fees ${rs(r.inc)} (${r.n} students) • Kharcha ${rs(r.exp)}</div></div>
-        <div style="text-align:right"><b class="${net >= 0 ? "green" : "red"}">${rs(Math.abs(net))}</b><div class="sub">${net >= 0 ? "Profit" : "Loss"}</div></div></button>`; }).join("") : `<div class="muted">Abhi koi record nahi hai.</div>`}
-      </div><div class="muted">Mahine pe tap karke us mahine ki poori list dekho.</div></div>`;
+          <div class="sub">Fees ${rs(r.inc)} (${r.n} students) • Expenses ${rs(r.exp)}</div></div>
+        <div style="text-align:right"><b class="${net >= 0 ? "green" : "red"}">${rs(Math.abs(net))}</b><div class="sub">${net >= 0 ? "Profit" : "Loss"}</div></div></button>`; }).join("") : `<div class="muted">No records yet.</div>`}
+      </div><div class="muted">Tap a month to see its full list.</div></div>`;
   } else {
     c.innerHTML = `<div class="pad">
       <div class="box" style="margin-top:0"><b>Download</b>
-        <button class="btn" onclick="A.csv()">⬇ ${labelOf(month)} ki students CSV</button>
-        <button class="btn" onclick="A.csvExp()">⬇ ${labelOf(month)} ka kharcha CSV</button></div>
+        <button class="btn" onclick="A.csv()">⬇ ${labelOf(month)} students CSV</button>
+        <button class="btn" onclick="A.csvExp()">⬇ ${labelOf(month)} expenses CSV</button></div>
       <div class="box"><b>Account</b>
-        <button class="btn" onclick="A.openPw()">🔑 Password badlo</button></div>
+        <button class="btn" onclick="A.openPw()">🔑 Change password</button></div>
       ${isOwner() ? `<div class="box"><b>Total seats</b>
         <input type="number" value="${totalSeats}" onchange="A.setSeats(this.value)" style="margin-top:8px"></div>` : ""}
-      <div class="muted">Login: ${esc(user.email)} (${isOwner() ? "Malik" : "Staff"})<br>Data sab devices pe live sync hota hai.</div></div>`;
+      <div class="muted">Login: ${esc(user.email)} (${isOwner() ? "Owner" : "Staff"})<br>Data syncs live across all devices.</div></div>`;
   }
 }
 
 function waLink(s) {
   const ph = (s.phone || "").replace(/\D/g, "");
-  const e = expiryOf(s);
-  const t = expStatus(s).k !== "ok" && e
-    ? `Namaste ${s.name}, aapki library ki fees ${fmt(e)} ko expire ho rahi hai/ho chuki hai (${seatText(s)}, Rs.${s.fee}). Kripya renew karein. Dhanyawad.`
-    : `Namaste ${s.name}, aapki library ki ${labelOf(month)} ki fees Rs.${s.fee} baaki hai (${seatText(s)}). Kripya jaldi jama karein. Dhanyawad.`;
+  const e = expiryOf(s), es = expStatus(s);
+  const seatEn = isRes(s) ? `Seat ${s.seat}` : "Unreserved seat";
+  const seatHi = isRes(s) ? `सीट ${s.seat}` : "अनारक्षित सीट";
+  const fee = `₹${s.fee}`;
+  const [y, m] = month.split("-").map(Number);
+  let en, hi;
+  if (e && es.k === "expired") {
+    en = `This is a courtesy reminder from *${LIB}*. Your membership (${seatEn}) expired on *${fmtY(e)}*. To continue using your seat, kindly renew your fee of ${fee} at the earliest.`;
+    hi = `*${LIB_HI}* की ओर से सूचना: आपकी सदस्यता (${seatHi}) *${fmtHi(e)}* को समाप्त हो चुकी है। अपनी सीट जारी रखने के लिए कृपया ${fee} की फीस शीघ्र जमा करें।`;
+  } else if (e && es.k === "soon") {
+    const w = es.days === 0 ? "today" : `on ${fmtY(e)}`;
+    const wh = es.days === 0 ? "आज" : `${fmtHi(e)} को`;
+    en = `This is a courtesy reminder from *${LIB}*. Your membership (${seatEn}) expires *${w}*. Kindly renew your fee of ${fee} to continue without interruption.`;
+    hi = `*${LIB_HI}* की ओर से सूचना: आपकी सदस्यता (${seatHi}) *${wh}* समाप्त हो रही है। बिना रुकावट सीट जारी रखने के लिए कृपया ${fee} की फीस जमा करें।`;
+  } else {
+    en = `This is a courtesy reminder from *${LIB}*. Your fee of ${fee} for *${MONTHS[m - 1]} ${y}* (${seatEn}) is pending. Kindly clear the payment at your earliest convenience.`;
+    hi = `*${LIB_HI}* की ओर से सूचना: *${HMONTHS[m - 1]} ${y}* की आपकी ${fee} की फीस (${seatHi}) बकाया है। कृपया शीघ्र भुगतान करें।`;
+  }
+  const t = `Dear ${s.name},\n\n${en}\n\nThank you.\n— ${LIB}\n\n──────────\n\nप्रिय ${s.name},\n\n${hi}\n\nधन्यवाद।\n— ${LIB_HI}`;
   return `https://wa.me/${ph.length === 10 ? "91" + ph : ph}?text=${encodeURIComponent(t)}`;
 }
 
@@ -351,25 +400,36 @@ function renderDetail() {
   const hist = Object.keys(s.payments || {}).sort().reverse();
   $("modal").innerHTML = `<div class="overlay"><div class="sheet">
     <button class="close" onclick="A.closeModal()">×</button>
-    <h2>${esc(s.name)}</h2>
-    <div class="sub">${seatText(s)} • ${esc(s.shift)} • ₹${s.fee}/month</div>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
+      <div onclick="A.zoom('${s.id}')" style="cursor:${s.photo ? "zoom-in" : "default"}">${avatar(s, 76)}</div>
+      <div class="grow"><h2>${esc(s.name)}</h2>
+        <div class="sub">${seatText(s)} • ${esc(s.shift)} • ₹${s.fee}/month</div></div>
+    </div>
     ${s.phone ? `<div class="sub">📞 ${esc(s.phone)}</div>` : ""}
-    <div class="sub">Joined: ${s.joinDate}</div>
-    <div class="${es.k === "ok" ? "green" : "red"}" style="font-size:14px;font-weight:600;margin-top:4px">Expiry: ${es.label}</div>
-    <div class="box"><b style="font-size:14px">${labelOf(month)} ki fees</b>
-      ${p ? `<div class="green" style="font-weight:600;margin-top:6px">✓ ₹${p.amt} mil gaye</div>
-        <div class="sub">${esc(p.mode)} • ${p.date}${p.by ? ` • ${esc(p.by)} ne liya` : ""}</div>
-        <button class="btn del" onclick="A.undo('${s.id}')">Galti se mark hui? Wapas baaki karo</button>`
-      : `<div class="two field"><input id="pamt" type="number" value="${s.fee}">
+    ${s.aadhaar ? `<div class="sub">🪪 Aadhaar: <b id="aad" onclick="A.toggleAad('${s.id}')" style="cursor:pointer">${maskAad(s.aadhaar)}</b> <small>(tap the number to view)</small></div>` : ""}
+    <div class="sub">Admission: ${s.joinDate}</div>
+    <div class="${es.k === "ok" ? "green" : "red"}" style="font-size:14px;font-weight:600;margin-top:4px">${es.label}</div>
+    <div class="box"><b style="font-size:14px">${labelOf(month)} fees</b>
+      ${p ? (p.covered
+        ? `<div class="green" style="font-weight:600;margin-top:6px">✓ Paid in advance</div>
+          <div class="sub">Included in the ${p.months}-month payment from ${labelOf(p.start)}</div>`
+        : `<div class="green" style="font-weight:600;margin-top:6px">✓ ₹${p.amt} received${p.months > 1 ? ` (${p.months} months' fees)` : ""}</div>
+          <div class="sub">${esc(p.mode)} • ${p.date}${p.by ? ` • received by ${esc(p.by)}` : ""}</div>`) +
+        `<button class="btn del" onclick="A.undo('${s.id}')">Marked by mistake? Mark as due again</button>`
+      : `<div class="field"><label>How many months of fees paid?</label>
+          <select id="pmn" onchange="A.monthsChg('${s.id}')">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1} month${i ? "s (advance)" : ""}</option>`).join("")}</select></div>
+         <div class="two field"><input id="pamt" type="number" value="${s.fee}">
           <select id="pmode"><option>Cash</option><option>UPI</option><option>Other</option></select></div>
-         <button class="btn ok" onclick="A.pay('${s.id}')">✓ Fees mil gayi</button>`}
-      ${s.phone ? `<a class="btn wa" href="${waLink(s)}" target="_blank" rel="noreferrer">💬 WhatsApp reminder bhejo</a>` : ""}
+         <div class="sub" style="margin-top:6px">Next expiry: <b id="pexp">${fmtY(cycleStart(s.joinDate, shiftYm(month, 1)))}</b></div>
+         <div id="perr" class="err"></div>
+         <button class="btn ok" onclick="A.pay('${s.id}')">✓ Fees received</button>`}
+      ${s.phone ? `<a class="btn wa" href="${waLink(s)}" target="_blank" rel="noreferrer">💬 Send WhatsApp reminder</a>` : ""}
     </div>
     <div style="margin-top:14px"><b style="font-size:14px">Payment history</b>
-      ${hist.length ? hist.map((m) => `<div class="hist"><span>${labelOf(m)}</span><span class="sub">₹${s.payments[m].amt} • ${esc(s.payments[m].mode)} • ${s.payments[m].date}</span></div>`).join("") : `<div class="sub">Abhi koi payment nahi.</div>`}
+      ${hist.length ? hist.map((m) => { const x = s.payments[m]; return `<div class="hist"><span>${labelOf(m)}</span><span class="sub">${x.covered ? `Advance (with ${labelOf(x.start)})` : `₹${x.amt} • ${esc(x.mode)} • ${x.date}${x.months > 1 ? ` • ${x.months} months` : ""}`}</span></div>`; }).join("") : `<div class="sub">No payments yet.</div>`}
     </div>
     <div class="two" style="margin-top:6px"><button class="btn" onclick="A.openForm('','${s.id}')">✏️ Edit</button>
-      <button class="btn del" onclick="A.remove('${s.id}')">🗑 Hatao</button></div>
+      <button class="btn del" onclick="A.remove('${s.id}')">🗑 Delete</button></div>
   </div></div>`;
 }
 
@@ -377,23 +437,32 @@ function renderForm(seat, id) {
   const s = id ? students.find((x) => x.id === id) : null;
   const unres = !!s && !isRes(s);
   formOpen = true;
+  formPhoto = s ? s.photo || "" : "";
   $("modal").innerHTML = `<div class="overlay"><div class="sheet">
     <button class="close" onclick="A.closeModal()">×</button>
-    <h2>${s ? "Student edit karo" : "Naya student"}</h2>
-    <div class="field"><input id="fn" placeholder="Naam" value="${esc(s ? s.name : "")}"></div>
+    <h2>${s ? "Edit student" : "New student"}</h2>
+    <div class="field" style="display:flex;align-items:center;gap:12px">
+      <div id="pv">${avatar({ name: s ? s.name : "", photo: formPhoto }, 64)}</div>
+      <div class="grow"><label>Photo (for identification)</label>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button type="button" class="btn sm" onclick="document.getElementById('fphoto').click()">📷 Take / choose photo</button>
+          <button type="button" class="btn sm del" onclick="A.rmPhoto()">Remove</button></div>
+        <input id="fphoto" type="file" accept="image/*" style="display:none" onchange="A.pickPhoto(this)"></div></div>
+    <div class="field"><input id="fn" placeholder="Name" value="${esc(s ? s.name : "")}"></div>
     <div class="field"><input id="fp" placeholder="Phone number" inputmode="numeric" value="${esc(s ? s.phone : "")}"></div>
+    <div class="field"><input id="fa" placeholder="Aadhaar number (12 digits, optional)" inputmode="numeric" maxlength="14" oninput="A.fmtAad(this)" value="${esc(s && s.aadhaar ? fullAad(s.aadhaar) : "")}"></div>
     <div class="field"><label>Seat type</label>
       <select id="ft" onchange="A.seatType()">
         <option value="r" ${unres ? "" : "selected"}>Reserved (fixed seat)</option>
-        <option value="u" ${unres ? "selected" : ""}>Unreserved (koi bhi seat)</option>
+        <option value="u" ${unres ? "selected" : ""}>Unreserved (any seat)</option>
       </select></div>
     <div class="two field"><input id="fs" type="number" placeholder="Seat no." value="${s ? (isRes(s) ? s.seat : "") : seat || ""}">
       <input id="ff" type="number" placeholder="Monthly fees ₹" value="${s ? s.fee : ""}"></div>
     <div class="field"><select id="fh">${SHIFTS.map((x) => `<option ${s && s.shift === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
-    <div class="field"><label>Joining date (isi din se har mahine ki fees cycle chalegi)</label>
+    <div class="field"><label>Admission date (expiry falls on this same date every month, e.g. admitted on the 7th → expires on the 7th)</label>
       <input id="fd" type="date" value="${s ? s.joinDate : todayStr()}"></div>
     <div id="ferr" class="err"></div>
-    <button class="btn pri" onclick="A.save('${id || ""}')">Save karo</button>
+    <button class="btn pri" onclick="A.save('${id || ""}')">Save</button>
   </div></div>`;
   A.seatType();
 }
@@ -403,19 +472,19 @@ function renderExpForm(id) {
   formOpen = true; detailId = null;
   $("modal").innerHTML = `<div class="overlay"><div class="sheet">
     <button class="close" onclick="A.closeModal()">×</button>
-    <h2>${e ? "Kharcha edit karo" : "Naya kharcha"}</h2>
-    <div class="field"><label>Kharcha kis cheez ka?</label>
-      <select id="ec">${CATS.map((x) => `<option ${e && e.cat === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+    <h2>${e ? "Edit expense" : "New expense"}</h2>
+    <div class="field"><label>What is the expense for?</label>
+      <select id="ec">${CATS.map((x) => `<option ${e && catEn(e.cat) === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
     <div class="two field"><input id="ea" type="number" inputmode="decimal" placeholder="Amount ₹" value="${e ? e.amt : ""}">
       <input id="ed" type="date" value="${e ? e.date : todayStr()}"></div>
-    <div class="field"><input id="ep" placeholder="Kisko dena hai / kisko diya (naam)" value="${esc(e ? e.payee : "")}"></div>
+    <div class="field"><input id="ep" placeholder="Paid to / to be paid to (name)" value="${esc(e ? e.payee : "")}"></div>
     <div class="field"><input id="en" placeholder="Note (optional)" value="${esc(e ? e.note : "")}"></div>
     <div class="field"><select id="es">
-      <option value="1" ${!e || e.paid ? "selected" : ""}>✓ Payment kar di</option>
-      <option value="0" ${e && !e.paid ? "selected" : ""}>⏳ Abhi dena baaki hai</option></select></div>
+      <option value="1" ${!e || e.paid ? "selected" : ""}>✓ Payment done</option>
+      <option value="0" ${e && !e.paid ? "selected" : ""}>⏳ Still to be paid</option></select></div>
     <div id="ferr" class="err"></div>
-    <button class="btn pri" onclick="A.saveExp('${id || ""}')">Save karo</button>
-    ${e ? `<button class="btn del" onclick="A.delExp('${id}')">🗑 Hatao</button>` : ""}
+    <button class="btn pri" onclick="A.saveExp('${id || ""}')">Save</button>
+    ${e ? `<button class="btn del" onclick="A.delExp('${id}')">🗑 Delete</button>` : ""}
   </div></div>`;
 }
 
@@ -423,12 +492,12 @@ function renderPwForm() {
   formOpen = true; detailId = null;
   $("modal").innerHTML = `<div class="overlay"><div class="sheet">
     <button class="close" onclick="A.closeModal()">×</button>
-    <h2>Password badlo</h2>
-    <div class="field"><input id="po" type="password" placeholder="Purana password" autocomplete="current-password"></div>
-    <div class="field"><input id="pn" type="password" placeholder="Naya password (kam se kam 6 akshar)" autocomplete="new-password"></div>
-    <div class="field"><input id="pc" type="password" placeholder="Naya password dobara likho" autocomplete="new-password"></div>
+    <h2>Change password</h2>
+    <div class="field"><input id="po" type="password" placeholder="Old password" autocomplete="current-password"></div>
+    <div class="field"><input id="pn" type="password" placeholder="New password (at least 6 characters)" autocomplete="new-password"></div>
+    <div class="field"><input id="pc" type="password" placeholder="Re-enter new password" autocomplete="new-password"></div>
     <div id="ferr" class="err"></div>
-    <button class="btn pri" onclick="A.changePw()">Password badlo</button>
+    <button class="btn pri" onclick="A.changePw()">Change password</button>
   </div></div>`;
 }
 
@@ -450,34 +519,34 @@ function download(rows, name) {
 const A = {
   login: async () => {
     try { await signInWithEmailAndPassword(auth, $("em").value.trim(), $("pw").value); }
-    catch (e) { $("lerr").style.color = ""; $("lerr").textContent = "Email ya password galat hai"; }
+    catch (e) { $("lerr").style.color = ""; $("lerr").textContent = "Incorrect email or password"; }
   },
   forgot: async () => {
     const em = $("em").value.trim(), el = $("lerr");
     el.style.color = "";
-    if (!em) { el.textContent = "Pehle upar apna email likho, phir 'Password bhool gaye?' dabao"; return; }
+    if (!em) { el.textContent = "Enter your email above first, then tap 'Forgot password?'"; return; }
     try {
       await sendPasswordResetEmail(auth, em);
       el.style.color = "#15803d";
-      el.textContent = "Password reset link email par bhej diya. Inbox ya spam folder check karo.";
-    } catch (e) { el.textContent = "Link nahi bhej paaye. Email sahi hai? Internet check karo."; }
+      el.textContent = "Password reset link sent to your email. Check your inbox or spam folder.";
+    } catch (e) { el.textContent = "Couldn't send the link. Is the email correct? Check your internet."; }
   },
   openPw: () => renderPwForm(),
   changePw: async () => {
     const err = (m, ok) => { const e = $("ferr"); e.textContent = m; e.style.color = ok ? "#15803d" : ""; };
     const o = $("po").value, n = $("pn").value, c = $("pc").value;
-    if (!o) return err("Purana password likho");
-    if (n.length < 6) return err("Naya password kam se kam 6 akshar ka ho");
-    if (n !== c) return err("Dono naye password same nahi hain");
-    if (n === o) return err("Naya password purane se alag rakho");
+    if (!o) return err("Enter your old password");
+    if (n.length < 6) return err("New password must be at least 6 characters");
+    if (n !== c) return err("The new passwords do not match");
+    if (n === o) return err("New password must differ from the old one");
     try {
       await reauthenticateWithCredential(auth.currentUser, EmailAuthProvider.credential(auth.currentUser.email, o));
       await updatePassword(auth.currentUser, n);
-      err("Password badal gaya ✓", true);
+      err("Password changed ✓", true);
       setTimeout(A.closeModal, 1500);
     } catch (e) {
       const bad = ["auth/wrong-password", "auth/invalid-credential", "auth/invalid-login-credentials"].includes(e.code);
-      err(bad ? "Purana password galat hai" : "Password nahi badla. Internet check karo ya thodi der baad try karo.");
+      err(bad ? "Old password is incorrect" : "Password not changed. Check your internet or try again later.");
     }
   },
   logout: () => signOut(auth),
@@ -494,6 +563,29 @@ const A = {
   detail: (id) => { detailId = id; formOpen = false; renderDetail(); },
   closeModal: () => { $("modal").innerHTML = ""; detailId = null; formOpen = false; },
   openForm: (seat, id) => renderForm(seat, id),
+  fmtAad: (el) => { el.value = el.value.replace(/\D/g, "").slice(0, 12).replace(/(\d{4})(?=\d)/g, "$1 "); },
+  pickPhoto: async (inp) => {
+    const file = inp.files && inp.files[0];
+    if (!file) return;
+    try {
+      formPhoto = await shrink(file);
+      $("pv").innerHTML = avatar({ name: $("fn").value, photo: formPhoto }, 64);
+      $("ferr").textContent = "";
+    } catch (e) { $("ferr").textContent = "Could not load the photo. Try another one."; }
+  },
+  rmPhoto: () => { formPhoto = ""; $("pv").innerHTML = avatar({ name: $("fn").value, photo: "" }, 64); },
+  zoom: (id) => {
+    const s = students.find((x) => x.id === id);
+    if (!s || !s.photo) return;
+    $("zoom").innerHTML = `<div class="overlay" onclick="document.getElementById('zoom').innerHTML=''"><img src="${s.photo}" alt=""></div>`;
+  },
+  toggleAad: (id) => {
+    const s = students.find((x) => x.id === id), el = $("aad");
+    if (!s || !el) return;
+    const show = el.dataset.on !== "1";
+    el.dataset.on = show ? "1" : "0";
+    el.textContent = show ? fullAad(s.aadhaar) : maskAad(s.aadhaar);
+  },
   seatType: () => {
     const u = $("ft").value === "u";
     $("fs").disabled = u;
@@ -502,32 +594,52 @@ const A = {
   },
   save: async (id) => {
     const un = $("ft").value === "u";
-    const f = { name: $("fn").value.trim(), phone: $("fp").value.trim(), seat: un ? 0 : +$("fs").value, fee: +$("ff").value, shift: $("fh").value, joinDate: $("fd").value };
+    const aad = $("fa").value.replace(/\D/g, "");
+    const f = { name: $("fn").value.trim(), phone: $("fp").value.trim(), aadhaar: aad, photo: formPhoto, seat: un ? 0 : +$("fs").value, fee: +$("ff").value, shift: $("fh").value, joinDate: $("fd").value };
     const err = (m) => { $("ferr").textContent = m; };
-    if (!f.name) return err("Naam likho");
-    if (!un && (!f.seat || f.seat < 1 || f.seat > totalSeats)) return err(`Seat 1 se ${totalSeats} ke beech honi chahiye`);
-    if (!f.fee) return err("Fees likho");
-    if (!f.joinDate) return err("Joining date chuno");
+    if (!f.name) return err("Enter a name");
+    if (aad && aad.length !== 12) return err("Aadhaar number must be 12 digits");
+    if (!un && (!f.seat || f.seat < 1 || f.seat > totalSeats)) return err(`Seat must be between 1 and ${totalSeats}`);
+    if (!f.fee) return err("Enter the fees");
+    if (!f.joinDate) return err("Choose the admission date");
     const clash = !un && students.find((s) => s.id !== id && conflict(s, f));
-    if (clash) return err(`Seat ${f.seat} (${clash.shift}) pe ${clash.name} pehle se hai`);
+    if (clash) return err(`Seat ${f.seat} (${clash.shift}) is already taken by ${clash.name}`);
     try {
       if (id) await updateDoc(doc(db, "students", id), f);
       else await addDoc(collection(db, "students"), { ...f, payments: {} });
       A.closeModal();
-    } catch (e) { err("Save nahi hua. Internet check karo."); }
+    } catch (e) { err("Could not save. Check your internet."); }
+  },
+  monthsChg: (id) => {
+    const s = students.find((x) => x.id === id), n = +$("pmn").value || 1;
+    $("pamt").value = (+s.fee || 0) * n;
+    $("pexp").textContent = fmtY(cycleStart(s.joinDate, shiftYm(month, n)));
   },
   pay: async (id) => {
     const s = students.find((x) => x.id === id);
-    const amt = +$("pamt").value || +s.fee;
-    await updateDoc(doc(db, "students", id), new FieldPath("payments", month), { amt, mode: $("pmode").value, date: todayStr(), by: myName() });
-    A.closeModal();
+    const n = +$("pmn").value || 1;
+    const amt = +$("pamt").value || +s.fee * n;
+    const keys = Array.from({ length: n }, (_, i) => shiftYm(month, i));
+    const clash = keys.find((k) => s.payments && s.payments[k]);
+    if (clash) { $("perr").textContent = `${labelOf(clash)} fees are already paid. Choose fewer months.`; return; }
+    const base = { mode: $("pmode").value, date: todayStr(), by: myName(), months: n, start: month };
+    const args = [];
+    keys.forEach((k, i) => args.push(new FieldPath("payments", k), i === 0 ? { ...base, amt } : { ...base, amt: 0, covered: true }));
+    try { await updateDoc(doc(db, "students", id), ...args); A.closeModal(); }
+    catch (e) { $("perr").textContent = "Could not save. Check your internet."; }
   },
   undo: async (id) => {
-    await updateDoc(doc(db, "students", id), new FieldPath("payments", month), deleteField());
+    const s = students.find((x) => x.id === id), p = s.payments[month];
+    const start = p.start || month, n = p.months || 1, args = [];
+    for (let i = 0; i < n; i++) {
+      const k = shiftYm(start, i);
+      if (s.payments[k] && (s.payments[k].start || k) === start) args.push(new FieldPath("payments", k), deleteField());
+    }
+    await updateDoc(doc(db, "students", id), ...args);
     A.closeModal();
   },
   remove: async (id) => {
-    if (!confirm("Pakka is student ko hatana hai? Uska poora record chala jayega.")) return;
+    if (!confirm("Delete this student? Their entire record will be lost.")) return;
     await deleteDoc(doc(db, "students", id));
     A.closeModal();
   },
@@ -536,8 +648,8 @@ const A = {
   saveExp: async (id) => {
     const err = (m) => { $("ferr").textContent = m; };
     const amt = +$("ea").value, date = $("ed").value, paid = $("es").value === "1";
-    if (!amt || amt <= 0) return err("Amount likho");
-    if (!date) return err("Date chuno");
+    if (!amt || amt <= 0) return err("Enter the amount");
+    if (!date) return err("Choose the date");
     const old = id ? expenses.find((x) => x.id === id) : null;
     const f = {
       cat: $("ec").value, amt, date, month: date.slice(0, 7),
@@ -549,34 +661,34 @@ const A = {
       if (id) await updateDoc(doc(db, "expenses", id), f);
       else await addDoc(collection(db, "expenses"), f);
       A.closeModal();
-    } catch (e) { err("Save nahi hua. Internet ya Firestore Rules check karo."); }
+    } catch (e) { err("Could not save. Check your internet or Firestore Rules."); }
   },
   expPaid: async (id) => {
     try { await updateDoc(doc(db, "expenses", id), { paid: true, paidDate: todayStr() }); }
-    catch (e) { alert("Save nahi hua. Internet ya Firestore Rules check karo."); }
+    catch (e) { alert("Could not save. Check your internet or Firestore Rules."); }
   },
   delExp: async (id) => {
-    if (!confirm("Is kharche ko hatana hai?")) return;
+    if (!confirm("Delete this expense?")) return;
     await deleteDoc(doc(db, "expenses", id));
     A.closeModal();
   },
   setSeats: async (v) => { await setDoc(doc(db, "settings", "main"), { totalSeats: Math.max(1, +v || 1) }); },
   csv: () => {
-    const rows = [["Seat", "Naam", "Phone", "Shift", "Fees", "Month", "Status", "Amount", "Mode", "Date", "Liya", "Expiry"]];
+    const rows = [["Seat", "Name", "Phone", "Shift", "Fees", "Month", "Status", "Amount", "Mode", "Date", "Received by", "Expiry"]];
     [...activeList()].sort((a, b) => (isRes(a) ? a.seat : 9999) - (isRes(b) ? b.seat : 9999)).forEach((s) => {
       const p = s.payments && s.payments[month], e = expiryOf(s);
-      rows.push([isRes(s) ? s.seat : "Unreserved", s.name, s.phone, s.shift, s.fee, labelOf(month), p ? "Paid" : "Baaki", p ? p.amt : "", p ? p.mode : "", p ? p.date : "", p ? p.by || "" : "", e ? fmt(e) : ""]);
+      rows.push([isRes(s) ? s.seat : "Unreserved", s.name, s.phone, s.shift, s.fee, labelOf(month), p ? "Paid" : "Due", p ? p.amt : "", p ? p.mode : "", p ? p.date : "", p ? p.by || "" : "", e ? fmtY(e) : ""]);
     });
     download(rows, `library-${month}.csv`);
   },
   csvExp: () => {
-    const rows = [["Date", "Cheez", "Kisko", "Note", "Amount", "Status", "Diya kab"]];
+    const rows = [["Date", "Category", "Paid to", "Note", "Amount", "Status", "Paid on"]];
     monthExp(month).sort((a, b) => a.date.localeCompare(b.date)).forEach((e) => {
-      rows.push([e.date, e.cat, e.payee, e.note, e.amt, e.paid ? "Diya" : "Baaki", e.paidDate || ""]);
+      rows.push([e.date, catEn(e.cat), e.payee, e.note, e.amt, e.paid ? "Paid" : "Pending", e.paidDate || ""]);
     });
     const inc = incomeOf(month), spent = sumAmt(monthExp(month));
-    rows.push([], ["", "Fees mili", "", "", inc], ["", "Total kharcha", "", "", spent], ["", inc - spent >= 0 ? "Profit" : "Loss", "", "", Math.abs(inc - spent)]);
-    download(rows, `kharcha-${month}.csv`);
+    rows.push([], ["", "Fees collected", "", "", inc], ["", "Total expenses", "", "", spent], ["", inc - spent >= 0 ? "Profit" : "Loss", "", "", Math.abs(inc - spent)]);
+    download(rows, `expenses-${month}.csv`);
   }
 };
 window.A = A;
