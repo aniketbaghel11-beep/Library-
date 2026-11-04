@@ -61,7 +61,7 @@ nav button.on{color:#4f46e5;font-weight:600}
 .field{margin-top:10px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .err{color:#dc2626;font-size:14px;margin-top:8px}
-.hist{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f3f4f6}
+.hist{display:flex;justify-content:space-between;flex-wrap:wrap;gap:2px 10px;font-size:13px;padding:5px 0;border-bottom:1px solid #f3f4f6}
 .row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px}
 .big{font-size:22px}
 .login{min-height:100vh;background:#4f46e5;display:flex;align-items:center;padding:20px}
@@ -73,6 +73,14 @@ label{font-size:12px;color:#6b7280}
 .ph{border-radius:50%;object-fit:cover;background:#eef2ff;color:#4338ca;display:flex;align-items:center;justify-content:center;font-weight:700}
 .av .ph{width:48px;height:48px;font-size:18px}
 .av .sb{position:absolute;right:-6px;bottom:-4px;background:#4f46e5;color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:1px 6px;border:2px solid #fff;line-height:1.3}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{background:#fff;border:1px solid #f3f4f6;border-radius:14px;padding:12px;text-align:left;width:100%}
+.card small{color:#6b7280;font-size:12px;display:block}
+.card b{font-size:22px;display:block;margin-top:2px}
+.subh{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.back{border:1px solid #e5e7eb;background:#fff;border-radius:10px;padding:6px 10px;font-size:13px}
+.pill.l{background:#f3f4f6;color:#6b7280}
+.sbanner{background:#f0fdf4;border:1px solid #86efac;border-radius:14px;padding:12px;margin-top:12px}
 #zoom .overlay{z-index:70;align-items:center;background:rgba(0,0,0,.85)}
 #zoom img{max-width:94vw;max-height:88vh;border-radius:16px}
 </style>
@@ -162,12 +170,8 @@ const cycleStart = (join, ym) => {
   const [y, m] = ym.split("-").map(Number);
   return new Date(y, m - 1, Math.min(pd(join).getDate(), new Date(y, m, 0).getDate()));
 };
-const expiryOf = (s) => {
-  const keys = Object.keys(s.payments || {}).sort();
-  if (!keys.length) return null;
-  // Expiry = admission wali date se agle mahine ki usi date (jaise 7 ko join kiya to expiry 7 ko)
-  return cycleStart(s.joinDate, shiftYm(keys[keys.length - 1], 1));
-};
+// Expiry = the end date of the latest payment (see entriesOf / planPay below)
+const expiryOf = (s) => { const e = entriesOf(s); return e.length ? e[e.length - 1].until : null; };
 const expStatus = (s) => {
   const e = expiryOf(s);
   if (!e) return { k: "new", label: "No fees paid yet", days: -999 };
@@ -179,18 +183,55 @@ const expStatus = (s) => {
   return { k: "ok", label: `Expiry: ${fmtY(e)} (${dn(days)} left)`, days };
 };
 
+// ---- Fees logic ----
+// Every payment covers a period [from, until). Paying on time continues from the old expiry (no days lost).
+// Paying late (or the first payment) starts from the payment date, e.g. due on the 30th, paid & marked on the 3rd -> next expiry is the 3rd.
+// Old records (stored per month in "payments") are still read; new ones are saved in "pays".
+const ymd = (d) => `${ymOf(d)}-${String(d.getDate()).padStart(2, "0")}`;
+const today0 = () => { const t = new Date(); t.setHours(0, 0, 0, 0); return t; };
+const addM = (d, n, day) => {
+  const t = new Date(d.getFullYear(), d.getMonth() + n, 1);
+  t.setDate(Math.min(day, new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate()));
+  return t;
+};
+const entriesOf = (s) => {
+  const jd = pd(s.joinDate).getDate();
+  const old = Object.entries(s.payments || {}).filter(([, p]) => !p.covered).map(([k, p]) => {
+    const n = p.months || 1;
+    return { id: "L" + k, legacy: true, k, n, from: cycleStart(s.joinDate, k), until: cycleStart(s.joinDate, shiftYm(k, n)), day: jd, amt: p.amt, mode: p.mode, date: p.date, by: p.by };
+  });
+  const nw = (s.pays || []).map((p) => ({ ...p, legacy: false, n: p.months || 1, from: pd(p.from), until: pd(p.until) }));
+  return [...old, ...nw].sort((a, b) => a.until - b.until || String(a.date).localeCompare(String(b.date)));
+};
+const planPay = (s, n, dateStr) => {
+  // The cycle ALWAYS follows the admission day (e.g. admitted on the 21st -> 21st to 21st), whenever you mark the payment.
+  const jd = pd(s.joinDate).getDate(), d = pd(dateStr);
+  const ents = entriesOf(s), last = ents[ents.length - 1];
+  let cs = addM(d, 0, jd);                 // start of the admission-day cycle that contains the payment date
+  if (cs > d) cs = addM(d, -1, jd);
+  const jn = pd(s.joinDate);
+  if (cs < jn) cs = jn;
+  const from = last && last.until > cs ? last.until : cs;   // paid early/on time: continue from old expiry
+  return { from, day: jd, n, until: addM(from, n, jd) };
+};
+const planText = (pl) => `${fmt(pl.from)} → ${fmtY(pl.until)}`;
+const payMonth = (e) => (e.date || "").slice(0, 7) || ymOf(e.from);
+
 let user = null, students = [], expenses = [], expErr = false, totalSeats = 100, formPhoto = "";
-let month = ymOf(new Date()), tab = "students", filter = "all", q = "", detailId = null, formOpen = false;
+let month = ymOf(new Date()), tab = "home", filter = "all", q = "", detailId = null, formOpen = false;
+let attDate = todayStr(), aq = "", flash = null;
 let unsubS = null, unsubC = null, unsubE = null;
 
 const isOwner = () => user && user.email.toLowerCase() === OWNER_EMAIL.toLowerCase();
 const myName = () => (user ? user.email.split("@")[0] : "");
-const isPaid = (s) => !!(s.payments && s.payments[month]);
-const activeList = () => students.filter((s) => s.joinDate.slice(0, 7) <= month);
+const isPaid = (s) => { const e = expiryOf(s); return !!e && Math.round((e - today0()) / 86400000) > 0; };
+const activeList = () => students.filter((s) => !s.left);
 const alertList = () => students.filter((s) => ["soon", "expired"].includes(expStatus(s).k));
 
 // ---- Hisaab (income / kharcha / profit-loss) ----
-const incomeOf = (m) => students.reduce((t, s) => t + (s.payments && s.payments[m] ? +s.payments[m].amt || 0 : 0), 0);
+// Fees income is counted in the month the money was actually received
+const incomeOf = (m) => students.reduce((t, s) => t + entriesOf(s).reduce((u, e) => u + (payMonth(e) === m ? +e.amt || 0 : 0), 0), 0);
+const payCountOf = (m) => students.reduce((t, s) => t + entriesOf(s).filter((e) => payMonth(e) === m).length, 0);
 const monthExp = (m) => expenses.filter((e) => e.month === m);
 const sumAmt = (arr) => arr.reduce((t, e) => t + (+e.amt || 0), 0);
 
@@ -209,10 +250,10 @@ function renderShell() {
   $("app").innerHTML = `<div id="top"></div><div id="content"></div>
   <button class="fab" onclick="A.fab()">+</button>
   <nav>
+    <button data-t="home" onclick="A.setTab('home')"><span>🏠</span>Home</button>
     <button data-t="students" onclick="A.setTab('students')"><span>👥</span>Students</button>
     <button data-t="seats" onclick="A.setTab('seats')"><span>💺</span>Seats</button>
     <button data-t="kharcha" onclick="A.setTab('kharcha')"><span>💸</span>Expenses</button>
-    <button data-t="history" onclick="A.setTab('history')"><span>🗓️</span>History</button>
     <button data-t="more" onclick="A.setTab('more')"><span>⚙️</span>More</button>
   </nav>`;
   renderTop(); renderContent();
@@ -221,18 +262,21 @@ function renderShell() {
 function renderTop() {
   if (!$("top")) return;
   const act = activeList();
-  const paid = act.filter(isPaid), unpaid = act.filter((s) => !isPaid(s));
-  const collected = paid.reduce((t, s) => t + (+s.payments[month].amt || 0), 0);
+  const unpaid = act.filter((s) => !isPaid(s));
+  const collected = incomeOf(month), nPay = payCountOf(month);
   const pending = unpaid.reduce((t, s) => t + (+s.fee || 0), 0);
   $("top").innerHTML = `<div class="hdr">
     <div class="hrow"><h1>📚 Library Manager</h1>
       <div><span class="chip">${esc(myName())}</span> <button class="chip" onclick="A.logout()">Logout</button></div></div>
     <div class="mnav"><button onclick="A.month(-1)">‹</button><b>${labelOf(month)}</b><button onclick="A.month(1)">›</button></div>
     <div class="stats">
-      <div class="stat"><small>Fees collected</small><b>₹${collected}</b><small>${paid.length} students</small></div>
-      <div class="stat"><small>Pending fees</small><b>₹${pending}</b><small>${unpaid.length} students</small></div>
+      <div class="stat"><small>Fees collected</small><b>₹${collected}</b><small>${nPay} payment${nPay === 1 ? "" : "s"}</small></div>
+      <div class="stat"><small>Due now</small><b>₹${pending}</b><small>${unpaid.length} students</small></div>
     </div></div>`;
-  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.t === tab));
+  const navTab = { history: "more", reminders: "home", attendance: "home" }[tab] || tab;
+  document.querySelectorAll("nav button").forEach((b) => b.classList.toggle("on", b.dataset.t === navTab));
+  const fab = document.querySelector(".fab");
+  if (fab) fab.style.display = ["home", "students", "seats", "kharcha"].includes(tab) ? "" : "none";
 }
 
 function itemHtml(s) {
@@ -242,15 +286,15 @@ function itemHtml(s) {
     <div class="av">${avatar(s)}<span class="sb">${isRes(s) ? s.seat : "UR"}</span></div>
     <div class="grow"><div class="nm">${esc(s.name)}</div>
       <div class="sub">${isRes(s) ? "" : "Unreserved • "}${esc(s.shift)} • ₹${s.fee}/month</div>
-      <div class="sub ${col}">${es.label}</div></div>
-    <span class="pill ${isPaid(s) ? "p" : "u"}">${isPaid(s) ? "Paid ✓" : "Due"}</span></button>`;
+      <div class="sub ${s.left ? "" : col}">${s.left ? `Left on ${s.leftDate || ""}` : es.label}</div></div>
+    ${s.left ? `<span class="pill l">Left</span>` : `<span class="pill ${isPaid(s) ? "p" : "u"}">${isPaid(s) ? "Paid ✓" : "Due"}</span>`}</button>`;
 }
 
 function getList() {
   const t = q.trim().toLowerCase();
-  let arr = filter === "expiring" ? alertList() : filter === "unres" ? activeList().filter((s) => !isRes(s)) : activeList();
+  let arr = filter === "left" ? students.filter((s) => s.left) : filter === "expiring" ? alertList() : filter === "unres" ? activeList().filter((s) => !isRes(s)) : activeList();
   arr = arr.filter((s) => (filter === "paid" ? isPaid(s) : filter === "unpaid" ? !isPaid(s) : true))
-    .filter((s) => !t || s.name.toLowerCase().includes(t) || (s.phone || "").includes(t) || (isRes(s) && String(s.seat) === t));
+    .filter((s) => !t || s.name.toLowerCase().includes(t) || (s.phone || "").includes(t) || (s.phone2 || "").includes(t) || (isRes(s) && String(s.seat) === t));
   return [...arr].sort((a, b) => filter === "expiring"
     ? expStatus(a).days - expStatus(b).days
     : (isRes(a) ? a.seat : 9999) - (isRes(b) ? b.seat : 9999) || a.name.localeCompare(b.name));
@@ -308,14 +352,101 @@ function renderKharcha(c) {
   </div>`;
 }
 
+const bySeat = (a, b) => (isRes(a) ? a.seat : 9999) - (isRes(b) ? b.seat : 9999) || a.name.localeCompare(b.name);
+const subHead = (title) => `<div class="subh"><button class="back" onclick="A.setTab('home')">‹ Home</button><b>${title}</b></div>`;
+const waNum = (ph) => { const d = String(ph || "").replace(/\D/g, ""); return d.length === 10 ? "91" + d : d; };
+
+function receiptLink(s, e) {
+  const hiMode = e.mode === "Cash" ? "नकद" : e.mode === "UPI" ? "UPI" : e.mode;
+  const en = `Thank you! We have received your fee of *₹${e.amt}* (${e.n} month${e.n > 1 ? "s" : ""}) on ${e.date} via ${e.mode}.\nPaid period: *${fmtY(e.from)} to ${fmtY(e.until)}*\nSeat: ${isRes(s) ? s.seat : "Unreserved"}`;
+  const hi = `धन्यवाद! हमें आपकी *₹${e.amt}* की फीस (${e.n} माह) ${e.date} को ${hiMode} से प्राप्त हुई।\nअवधि: *${fmtHi(e.from)} से ${fmtHi(e.until)} तक*\nसीट: ${isRes(s) ? s.seat : "अनारक्षित"}`;
+  const t = `*Fee Receipt — ${LIB}*\n\nDear ${s.name},\n${en}\n\n──────────\n\n*फीस रसीद — ${LIB_HI}*\n\nप्रिय ${s.name},\n${hi}\n\n— ${LIB} / ${LIB_HI}`;
+  return `https://wa.me/${waNum(s.phone)}?text=${encodeURIComponent(t)}`;
+}
+
+function renderHome(c) {
+  const act = activeList();
+  const st = act.map(expStatus);
+  const nSoon = st.filter((x) => x.k === "soon").length;
+  const nExp = st.filter((x) => x.k === "expired" || x.k === "new").length;
+  const filled = new Set(act.filter(isRes).map((s) => s.seat)).size;
+  const nUn = act.filter((s) => !isRes(s)).length;
+  const present = act.filter((s) => s.att && s.att[todayStr()]).length;
+  const nLeft = students.filter((s) => s.left).length;
+  const inc = incomeOf(month), spent = sumAmt(monthExp(month)), net = inc - spent;
+  c.innerHTML = `<div class="pad">
+    <div class="cards">
+      <button class="card" onclick="A.setFilter('all')"><small>Active students</small><b>${act.length}</b></button>
+      <button class="card" onclick="A.setTab('seats')"><small>Seats filled</small><b>${filled}/${totalSeats}</b><small>+ ${nUn} unreserved</small></button>
+      <button class="card" onclick="A.setTab('reminders')"><small>Expiring in 3 days</small><b class="amber">${nSoon}</b></button>
+      <button class="card" onclick="A.setTab('reminders')"><small>Expired / not paid</small><b class="red">${nExp}</b></button>
+      <button class="card" onclick="A.setTab('attendance')"><small>Present today</small><b class="green">${present}</b><small>of ${act.length}</small></button>
+      <button class="card" onclick="A.setFilter('left')"><small>Left students</small><b>${nLeft}</b></button>
+    </div>
+    <div class="box">
+      <b>${labelOf(month)} summary</b>
+      <div class="row"><span>Fees collected</span><b class="green">${rs(inc)}</b></div>
+      <div class="row"><span>Expenses</span><b class="red">${rs(spent)}</b></div>
+      <div class="row" style="border-top:1px solid #e5e7eb;margin-top:4px;padding-top:8px"><b>${net >= 0 ? "Profit" : "Loss"}</b><b class="big ${net >= 0 ? "green" : "red"}">${rs(Math.abs(net))}</b></div>
+    </div>
+    <button class="btn pri" onclick="A.setTab('reminders')">💬 Send fee reminders (${nSoon + nExp})</button>
+    <button class="btn" onclick="A.setTab('attendance')">✅ Take attendance</button>
+    <button class="btn" onclick="A.setTab('history')">🗓️ Month-wise summary</button>
+  </div>`;
+}
+
+function renderReminders(c) {
+  const arr = activeList().filter((s) => ["expired", "soon", "new"].includes(expStatus(s).k)).sort((a, b) => expStatus(a).days - expStatus(b).days);
+  const tot = arr.reduce((t, s) => t + (+s.fee || 0), 0);
+  c.innerHTML = `<div class="pad">${subHead("Fee reminders")}
+    <div class="sub" style="margin-bottom:10px">${arr.length} student${arr.length === 1 ? "" : "s"} • ${rs(tot)} to collect. Tap Send, WhatsApp opens with the English + Hindi message.</div>
+    ${arr.length ? arr.map((s) => { const es = expStatus(s), col = es.k === "soon" ? "amber" : "red", td = s.reminded === todayStr();
+      return `<div class="item"><div class="av" onclick="A.detail('${s.id}')">${avatar(s)}<span class="sb">${isRes(s) ? s.seat : "UR"}</span></div>
+        <div class="grow" onclick="A.detail('${s.id}')"><div class="nm">${esc(s.name)}</div>
+          <div class="sub ${col}">${es.label}</div>
+          <div class="sub">${td ? "✓ Reminded today" : s.reminded ? "Last reminded: " + s.reminded : "Not reminded yet"}</div></div>
+        ${s.phone ? `<a class="btn wa sm" href="${waLink(s)}" target="_blank" rel="noreferrer" onclick="A.reminded('${s.id}')">💬 Send</a>` : `<span class="sub">No phone</span>`}</div>`; }).join("")
+      : `<div class="muted">🎉 No one has fees expiring or expired.</div>`}
+  </div>`;
+}
+
+function renderAtt(c) {
+  c.innerHTML = `<div class="pad">${subHead("Attendance")}
+    <div class="two"><input id="adate" type="date" max="${todayStr()}" value="${attDate}" onchange="A.attDay(this.value)">
+      <input id="aq" placeholder="Search name / seat" value="${esc(aq)}" oninput="A.attSearch(this.value)"></div>
+    <div id="attsum" class="sub" style="margin:10px 0"></div>
+    <div id="attlist"></div></div>`;
+  renderAttList();
+}
+function renderAttList() {
+  const el = $("attlist"); if (!el) return;
+  const all = activeList(), t = aq.trim().toLowerCase();
+  const arr = all.filter((s) => !t || s.name.toLowerCase().includes(t) || (isRes(s) && String(s.seat) === t)).sort(bySeat);
+  $("attsum").textContent = `Present: ${all.filter((s) => s.att && s.att[attDate]).length} / ${all.length} • Tap a student to mark / unmark`;
+  el.innerHTML = arr.length ? arr.map((s) => {
+    const at = s.att && s.att[attDate], k = expStatus(s).k, bad = k === "expired" || k === "new";
+    return `<button class="item" onclick="A.mark('${s.id}')"><div class="av">${avatar(s)}<span class="sb">${isRes(s) ? s.seat : "UR"}</span></div>
+      <div class="grow"><div class="nm">${esc(s.name)}</div>
+        <div class="sub ${at ? "green" : ""}">${at ? "Present • " + esc(at) : "Absent"}</div>
+        ${bad ? `<div class="sub red">⚠ Fees expired / not paid</div>` : ""}</div>
+      <span class="pill ${at ? "p" : "l"}">${at ? "Present ✓" : "—"}</span></button>`;
+  }).join("") : `<div class="muted">No students found.</div>`;
+}
+
 function renderContent() {
   const c = $("content"); if (!c) return;
-  if (tab === "students") {
+  if (tab === "home") {
+    renderHome(c);
+  } else if (tab === "reminders") {
+    renderReminders(c);
+  } else if (tab === "attendance") {
+    renderAtt(c);
+  } else if (tab === "students") {
     const al = alertList();
     c.innerHTML = `<div class="pad">
       ${al.length ? `<button class="alert" onclick="A.setFilter('expiring')">⚠️ <b>${al.length} students</b> have fees expiring or already expired. Tap to view.</button>` : ""}
       <input id="q" placeholder="Search name / phone / seat no." value="${esc(q)}" oninput="A.search(this.value)">
-      <div class="filters">${[["all", "All"], ["unpaid", "Due"], ["paid", "Paid"], ["expiring", "⚠ Expiring"], ["unres", "Unreserved"]]
+      <div class="filters">${[["all", "All"], ["unpaid", "Due"], ["paid", "Paid"], ["expiring", "⚠ Expiring"], ["unres", "Unreserved"], ["left", "Left"]]
         .map(([k, l]) => `<button class="${filter === k ? "on" : ""}" onclick="A.setFilter('${k}')">${l}</button>`).join("")}</div>
       <div id="list"></div></div>`;
     renderList();
@@ -343,23 +474,30 @@ function renderContent() {
   } else if (tab === "history") {
     const map = {};
     const row = (m) => (map[m] = map[m] || { m, n: 0, inc: 0, exp: 0 });
-    students.forEach((s) => Object.entries(s.payments || {}).forEach(([m, p]) => { if (p.covered) return; const r = row(m); r.n++; r.inc += +p.amt || 0; }));
+    students.forEach((s) => entriesOf(s).forEach((e) => { const r = row(payMonth(e)); r.n++; r.inc += +e.amt || 0; }));
     expenses.forEach((e) => { row(e.month).exp += +e.amt || 0; });
     const rows = Object.values(map).sort((a, b) => b.m.localeCompare(a.m));
     const tot = rows.reduce((t, r) => t + r.inc - r.exp, 0);
-    c.innerHTML = `<div class="pad"><b>Month-wise summary</b>
+    c.innerHTML = `<div class="pad">${subHead("Month-wise summary")}
       ${rows.length ? `<div class="sub">Total ${tot >= 0 ? "profit" : "loss"} so far: <b class="${tot >= 0 ? "green" : "red"}">${rs(Math.abs(tot))}</b></div>` : ""}
       <div style="margin-top:10px">
       ${rows.length ? rows.map((r) => { const net = r.inc - r.exp; return `<button class="item" onclick="A.goMonth('${r.m}')">
         <div class="grow"><div class="nm">${labelOf(r.m)}</div>
-          <div class="sub">Fees ${rs(r.inc)} (${r.n} students) • Expenses ${rs(r.exp)}</div></div>
+          <div class="sub">Fees ${rs(r.inc)} (${r.n} payment${r.n === 1 ? "" : "s"}) • Expenses ${rs(r.exp)}</div></div>
         <div style="text-align:right"><b class="${net >= 0 ? "green" : "red"}">${rs(Math.abs(net))}</b><div class="sub">${net >= 0 ? "Profit" : "Loss"}</div></div></button>`; }).join("") : `<div class="muted">No records yet.</div>`}
       </div><div class="muted">Tap a month to see its full list.</div></div>`;
   } else {
     c.innerHTML = `<div class="pad">
-      <div class="box" style="margin-top:0"><b>Download</b>
-        <button class="btn" onclick="A.csv()">⬇ ${labelOf(month)} students CSV</button>
-        <button class="btn" onclick="A.csvExp()">⬇ ${labelOf(month)} expenses CSV</button></div>
+      <div class="box" style="margin-top:0"><b>Tools</b>
+        <button class="btn" onclick="A.setTab('attendance')">✅ Attendance</button>
+        <button class="btn" onclick="A.setTab('reminders')">💬 Fee reminders</button>
+        <button class="btn" onclick="A.setTab('history')">🗓️ Month-wise summary</button>
+        <button class="btn" onclick="A.setFilter('left')">🚪 Left students</button></div>
+      <div class="box"><b>Download</b>
+        <button class="btn" onclick="A.csv()">⬇ Students CSV (as of today)</button>
+        <button class="btn" onclick="A.csvExp()">⬇ ${labelOf(month)} expenses CSV</button>
+        <button class="btn" onclick="A.backup()">💾 Full backup (all data)</button>
+        <div class="sub" style="margin-top:6px">Download a backup once in a while and keep it safe (Drive / WhatsApp to yourself).</div></div>
       <div class="box"><b>Account</b>
         <button class="btn" onclick="A.openPw()">🔑 Change password</button></div>
       ${isOwner() ? `<div class="box"><b>Total seats</b>
@@ -374,7 +512,6 @@ function waLink(s) {
   const seatEn = isRes(s) ? `Seat ${s.seat}` : "Unreserved seat";
   const seatHi = isRes(s) ? `सीट ${s.seat}` : "अनारक्षित सीट";
   const fee = `₹${s.fee}`;
-  const [y, m] = month.split("-").map(Number);
   let en, hi;
   if (e && es.k === "expired") {
     en = `This is a courtesy reminder from *${LIB}*. Your membership (${seatEn}) expired on *${fmtY(e)}*. To continue using your seat, kindly renew your fee of ${fee} at the earliest.`;
@@ -385,8 +522,8 @@ function waLink(s) {
     en = `This is a courtesy reminder from *${LIB}*. Your membership (${seatEn}) expires *${w}*. Kindly renew your fee of ${fee} to continue without interruption.`;
     hi = `*${LIB_HI}* की ओर से सूचना: आपकी सदस्यता (${seatHi}) *${wh}* समाप्त हो रही है। बिना रुकावट सीट जारी रखने के लिए कृपया ${fee} की फीस जमा करें।`;
   } else {
-    en = `This is a courtesy reminder from *${LIB}*. Your fee of ${fee} for *${MONTHS[m - 1]} ${y}* (${seatEn}) is pending. Kindly clear the payment at your earliest convenience.`;
-    hi = `*${LIB_HI}* की ओर से सूचना: *${HMONTHS[m - 1]} ${y}* की आपकी ${fee} की फीस (${seatHi}) बकाया है। कृपया शीघ्र भुगतान करें।`;
+    en = `This is a courtesy reminder from *${LIB}*. Your fee of ${fee} (${seatEn}) is pending. Kindly clear the payment at your earliest convenience.`;
+    hi = `*${LIB_HI}* की ओर से सूचना: आपकी ${fee} की फीस (${seatHi}) बकाया है। कृपया शीघ्र भुगतान करें।`;
   }
   const t = `Dear ${s.name},\n\n${en}\n\nThank you.\n— ${LIB}\n\n──────────\n\nप्रिय ${s.name},\n\n${hi}\n\nधन्यवाद।\n— ${LIB_HI}`;
   return `https://wa.me/${ph.length === 10 ? "91" + ph : ph}?text=${encodeURIComponent(t)}`;
@@ -396,8 +533,9 @@ function renderDetail() {
   const s = students.find((x) => x.id === detailId);
   if (!s) { $("modal").innerHTML = ""; detailId = null; return; }
   const es = expStatus(s);
-  const p = s.payments && s.payments[month];
-  const hist = Object.keys(s.payments || {}).sort().reverse();
+  const groups = entriesOf(s).reverse();
+  const last = groups[0];
+  const pl0 = planPay(s, 1, todayStr());
   $("modal").innerHTML = `<div class="overlay"><div class="sheet">
     <button class="close" onclick="A.closeModal()">×</button>
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px">
@@ -406,28 +544,36 @@ function renderDetail() {
         <div class="sub">${seatText(s)} • ${esc(s.shift)} • ₹${s.fee}/month</div></div>
     </div>
     ${s.phone ? `<div class="sub">📞 ${esc(s.phone)}</div>` : ""}
+    ${s.phone2 ? `<div class="sub">👪 Alt / parent: ${esc(s.phone2)}</div>` : ""}
+    ${s.note ? `<div class="sub">📝 ${esc(s.note)}</div>` : ""}
     ${s.aadhaar ? `<div class="sub">🪪 Aadhaar: <b id="aad" onclick="A.toggleAad('${s.id}')" style="cursor:pointer">${maskAad(s.aadhaar)}</b> <small>(tap the number to view)</small></div>` : ""}
     <div class="sub">Admission: ${s.joinDate}</div>
     <div class="${es.k === "ok" ? "green" : "red"}" style="font-size:14px;font-weight:600;margin-top:4px">${es.label}</div>
-    <div class="box"><b style="font-size:14px">${labelOf(month)} fees</b>
-      ${p ? (p.covered
-        ? `<div class="green" style="font-weight:600;margin-top:6px">✓ Paid in advance</div>
-          <div class="sub">Included in the ${p.months}-month payment from ${labelOf(p.start)}</div>`
-        : `<div class="green" style="font-weight:600;margin-top:6px">✓ ₹${p.amt} received${p.months > 1 ? ` (${p.months} months' fees)` : ""}</div>
-          <div class="sub">${esc(p.mode)} • ${p.date}${p.by ? ` • received by ${esc(p.by)}` : ""}</div>`) +
-        `<button class="btn del" onclick="A.undo('${s.id}')">Marked by mistake? Mark as due again</button>`
-      : `<div class="field"><label>How many months of fees paid?</label>
-          <select id="pmn" onchange="A.monthsChg('${s.id}')">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1} month${i ? "s (advance)" : ""}</option>`).join("")}</select></div>
-         <div class="two field"><input id="pamt" type="number" value="${s.fee}">
-          <select id="pmode"><option>Cash</option><option>UPI</option><option>Other</option></select></div>
-         <div class="sub" style="margin-top:6px">Next expiry: <b id="pexp">${fmtY(cycleStart(s.joinDate, shiftYm(month, 1)))}</b></div>
-         <div id="perr" class="err"></div>
-         <button class="btn ok" onclick="A.pay('${s.id}')">✓ Fees received</button>`}
+    ${s.left ? `<div class="box"><b>🚪 This student has left (${esc(s.leftDate || "")})</b>
+        <div class="sub" style="margin-top:4px">Their seat is free for someone else. Payment history is kept.</div>
+        <button class="btn ok" onclick="A.rejoin('${s.id}')">↩ Re-join (restore student)</button></div>` : `
+    ${flash === s.id && last ? `<div class="sbanner"><b class="green">✓ Payment saved</b>
+        <div class="sub">₹${last.amt} • ${fmt(last.from)} → ${fmtY(last.until)}</div>
+        ${s.phone ? `<a class="btn wa" href="${receiptLink(s, last)}" target="_blank" rel="noreferrer">🧾 Send receipt on WhatsApp</a>` : ""}</div>` : ""}
+    <div class="box"><b style="font-size:14px">Receive fees</b>
+      <div class="sub" style="margin-top:4px">The cycle always follows the admission date (e.g. admitted on the 21st → 21st to 21st), even if you mark the payment late. Nothing changes until you press "Fees received".</div>
+      <div class="field"><label>How many months of fees paid?</label>
+        <select id="pmn" onchange="A.planChg('${s.id}')">${Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1} month${i ? "s (advance)" : ""}</option>`).join("")}</select></div>
+      <div class="two field"><input id="pamt" type="number" value="${s.fee}">
+        <select id="pmode"><option>Cash</option><option>UPI</option><option>Other</option></select></div>
+      <div class="field"><label>Payment date (change it if the student paid on another day)</label>
+        <input id="pdate" type="date" value="${todayStr()}" onchange="A.planChg('${s.id}')"></div>
+      <div class="sub" style="margin-top:8px">This payment covers: <b id="pcov">${planText(pl0)}</b></div>
+      <div id="perr" class="err"></div>
+      <button class="btn ok" onclick="A.pay('${s.id}')">✓ Fees received</button>
+      ${last ? `<button class="btn del" onclick="A.undo('${s.id}')">Undo last payment (₹${last.amt}, ${last.date})</button>` : ""}
       ${s.phone ? `<a class="btn wa" href="${waLink(s)}" target="_blank" rel="noreferrer">💬 Send WhatsApp reminder</a>` : ""}
-    </div>
+    </div>`}
     <div style="margin-top:14px"><b style="font-size:14px">Payment history</b>
-      ${hist.length ? hist.map((m) => { const x = s.payments[m]; return `<div class="hist"><span>${labelOf(m)}</span><span class="sub">${x.covered ? `Advance (with ${labelOf(x.start)})` : `₹${x.amt} • ${esc(x.mode)} • ${x.date}${x.months > 1 ? ` • ${x.months} months` : ""}`}</span></div>`; }).join("") : `<div class="sub">No payments yet.</div>`}
+      ${groups.length ? groups.map((e) => `<div class="hist"><span>${fmt(e.from)} → ${fmtY(e.until)}</span><span class="sub">₹${e.amt} • ${esc(e.mode)} • ${e.date}${e.n > 1 ? ` • ${e.n} months` : ""}</span></div>`).join("") : `<div class="sub">No payments yet.</div>`}
     </div>
+    ${last && s.phone ? `<a class="btn wa" href="${receiptLink(s, last)}" target="_blank" rel="noreferrer">🧾 Send receipt of last payment</a>` : ""}
+    ${s.left ? "" : `<button class="btn" onclick="A.leave('${s.id}')">🚪 Mark as left (free the seat)</button>`}
     <div class="two" style="margin-top:6px"><button class="btn" onclick="A.openForm('','${s.id}')">✏️ Edit</button>
       <button class="btn del" onclick="A.remove('${s.id}')">🗑 Delete</button></div>
   </div></div>`;
@@ -450,6 +596,7 @@ function renderForm(seat, id) {
         <input id="fphoto" type="file" accept="image/*" style="display:none" onchange="A.pickPhoto(this)"></div></div>
     <div class="field"><input id="fn" placeholder="Name" value="${esc(s ? s.name : "")}"></div>
     <div class="field"><input id="fp" placeholder="Phone number" inputmode="numeric" value="${esc(s ? s.phone : "")}"></div>
+    <div class="field"><input id="fp2" placeholder="Alternate / parent phone (optional)" inputmode="numeric" value="${esc(s ? s.phone2 : "")}"></div>
     <div class="field"><input id="fa" placeholder="Aadhaar number (12 digits, optional)" inputmode="numeric" maxlength="14" oninput="A.fmtAad(this)" value="${esc(s && s.aadhaar ? fullAad(s.aadhaar) : "")}"></div>
     <div class="field"><label>Seat type</label>
       <select id="ft" onchange="A.seatType()">
@@ -459,8 +606,9 @@ function renderForm(seat, id) {
     <div class="two field"><input id="fs" type="number" placeholder="Seat no." value="${s ? (isRes(s) ? s.seat : "") : seat || ""}">
       <input id="ff" type="number" placeholder="Monthly fees ₹" value="${s ? s.fee : ""}"></div>
     <div class="field"><select id="fh">${SHIFTS.map((x) => `<option ${s && s.shift === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
-    <div class="field"><label>Admission date (expiry falls on this same date every month, e.g. admitted on the 7th → expires on the 7th)</label>
+    <div class="field"><label>Admission date</label>
       <input id="fd" type="date" value="${s ? s.joinDate : todayStr()}"></div>
+    <div class="field"><input id="fnote" placeholder="Note (optional) e.g. exam, college, address" value="${esc(s ? s.note : "")}"></div>
     <div id="ferr" class="err"></div>
     <button class="btn pri" onclick="A.save('${id || ""}')">Save</button>
   </div></div>`;
@@ -504,7 +652,8 @@ function renderPwForm() {
 function refreshUI() {
   if (!user) return;
   renderTop();
-  if (document.activeElement && document.activeElement.id === "q") renderList();
+  if (tab === "attendance" && $("attlist")) renderAttList();
+  else if (document.activeElement && document.activeElement.id === "q") renderList();
   else renderContent();
   if (detailId && !formOpen) renderDetail();
 }
@@ -560,8 +709,8 @@ const A = {
     if (seatState(n) === "vacant") A.openForm(n);
     else { q = String(n); filter = "all"; tab = "students"; renderTop(); renderContent(); }
   },
-  detail: (id) => { detailId = id; formOpen = false; renderDetail(); },
-  closeModal: () => { $("modal").innerHTML = ""; detailId = null; formOpen = false; },
+  detail: (id) => { detailId = id; formOpen = false; flash = null; renderDetail(); },
+  closeModal: () => { $("modal").innerHTML = ""; detailId = null; formOpen = false; flash = null; },
   openForm: (seat, id) => renderForm(seat, id),
   fmtAad: (el) => { el.value = el.value.replace(/\D/g, "").slice(0, 12).replace(/(\d{4})(?=\d)/g, "$1 "); },
   pickPhoto: async (inp) => {
@@ -595,14 +744,15 @@ const A = {
   save: async (id) => {
     const un = $("ft").value === "u";
     const aad = $("fa").value.replace(/\D/g, "");
-    const f = { name: $("fn").value.trim(), phone: $("fp").value.trim(), aadhaar: aad, photo: formPhoto, seat: un ? 0 : +$("fs").value, fee: +$("ff").value, shift: $("fh").value, joinDate: $("fd").value };
+    const f = { name: $("fn").value.trim(), phone: $("fp").value.trim(), phone2: $("fp2").value.trim(), note: $("fnote").value.trim(), aadhaar: aad, photo: formPhoto, seat: un ? 0 : +$("fs").value, fee: +$("ff").value, shift: $("fh").value, joinDate: $("fd").value };
     const err = (m) => { $("ferr").textContent = m; };
     if (!f.name) return err("Enter a name");
     if (aad && aad.length !== 12) return err("Aadhaar number must be 12 digits");
     if (!un && (!f.seat || f.seat < 1 || f.seat > totalSeats)) return err(`Seat must be between 1 and ${totalSeats}`);
     if (!f.fee) return err("Enter the fees");
     if (!f.joinDate) return err("Choose the admission date");
-    const clash = !un && students.find((s) => s.id !== id && conflict(s, f));
+    const cur = id ? students.find((s) => s.id === id) : null;
+    const clash = !un && !(cur && cur.left) && students.find((s) => s.id !== id && !s.left && conflict(s, f));
     if (clash) return err(`Seat ${f.seat} (${clash.shift}) is already taken by ${clash.name}`);
     try {
       if (id) await updateDoc(doc(db, "students", id), f);
@@ -610,33 +760,70 @@ const A = {
       A.closeModal();
     } catch (e) { err("Could not save. Check your internet."); }
   },
-  monthsChg: (id) => {
+  planChg: (id) => {
     const s = students.find((x) => x.id === id), n = +$("pmn").value || 1;
     $("pamt").value = (+s.fee || 0) * n;
-    $("pexp").textContent = fmtY(cycleStart(s.joinDate, shiftYm(month, n)));
+    $("pcov").textContent = planText(planPay(s, n, $("pdate").value || todayStr()));
   },
   pay: async (id) => {
     const s = students.find((x) => x.id === id);
     const n = +$("pmn").value || 1;
+    const date = $("pdate").value || todayStr();
     const amt = +$("pamt").value || +s.fee * n;
-    const keys = Array.from({ length: n }, (_, i) => shiftYm(month, i));
-    const clash = keys.find((k) => s.payments && s.payments[k]);
-    if (clash) { $("perr").textContent = `${labelOf(clash)} fees are already paid. Choose fewer months.`; return; }
-    const base = { mode: $("pmode").value, date: todayStr(), by: myName(), months: n, start: month };
-    const args = [];
-    keys.forEach((k, i) => args.push(new FieldPath("payments", k), i === 0 ? { ...base, amt } : { ...base, amt: 0, covered: true }));
-    try { await updateDoc(doc(db, "students", id), ...args); A.closeModal(); }
+    const pl = planPay(s, n, date);
+    if (!confirm(`Receive ₹${amt} from ${s.name}?\nThis covers ${planText(pl)}.`)) return;
+    const entry = { id: String(Date.now()), from: ymd(pl.from), until: ymd(pl.until), months: n, day: pl.day, amt, mode: $("pmode").value, date, by: myName() };
+    try { await updateDoc(doc(db, "students", id), { pays: [...(s.pays || []), entry] }); flash = id; renderDetail(); }
     catch (e) { $("perr").textContent = "Could not save. Check your internet."; }
   },
   undo: async (id) => {
-    const s = students.find((x) => x.id === id), p = s.payments[month];
-    const start = p.start || month, n = p.months || 1, args = [];
-    for (let i = 0; i < n; i++) {
-      const k = shiftYm(start, i);
-      if (s.payments[k] && (s.payments[k].start || k) === start) args.push(new FieldPath("payments", k), deleteField());
-    }
-    await updateDoc(doc(db, "students", id), ...args);
-    A.closeModal();
+    const s = students.find((x) => x.id === id);
+    const ents = entriesOf(s);
+    if (!ents.length) return;
+    const g = ents[ents.length - 1];
+    if (!confirm(`Undo the payment of ₹${g.amt} received on ${g.date}?`)) return;
+    try {
+      if (g.legacy) {
+        const args = [];
+        for (let i = 0; i < g.n; i++) {
+          const k = shiftYm(g.k, i);
+          if (s.payments[k] && (s.payments[k].start || k) === (s.payments[g.k].start || g.k)) args.push(new FieldPath("payments", k), deleteField());
+        }
+        await updateDoc(doc(db, "students", id), ...args);
+      } else {
+        await updateDoc(doc(db, "students", id), { pays: (s.pays || []).filter((p) => p.id !== g.id) });
+      }
+      A.closeModal();
+    } catch (e) { alert("Could not save. Check your internet."); }
+  },
+  leave: async (id) => {
+    const s = students.find((x) => x.id === id);
+    if (!confirm(`Mark ${s.name} as left? The seat will become free. You can restore the student later.`)) return;
+    try { await updateDoc(doc(db, "students", id), { left: true, leftDate: todayStr() }); A.closeModal(); }
+    catch (e) { alert("Could not save. Check your internet."); }
+  },
+  rejoin: async (id) => {
+    const s = students.find((x) => x.id === id);
+    const clash = isRes(s) && students.find((o) => o.id !== id && !o.left && conflict(o, s));
+    if (clash) return alert(`Seat ${s.seat} (${clash.shift}) is now taken by ${clash.name}. Edit this student and choose another seat first.`);
+    try { await updateDoc(doc(db, "students", id), { left: false, leftDate: "" }); }
+    catch (e) { alert("Could not save. Check your internet."); }
+  },
+  reminded: (id) => { updateDoc(doc(db, "students", id), { reminded: todayStr() }).catch(() => {}); },
+  attDay: (v) => { attDate = v || todayStr(); renderAttList(); },
+  attSearch: (v) => { aq = v; renderAttList(); },
+  mark: async (id) => {
+    const s = students.find((x) => x.id === id);
+    const on = s.att && s.att[attDate];
+    const t = attDate === todayStr() ? new Date().toTimeString().slice(0, 5) : "✓";
+    try { await updateDoc(doc(db, "students", id), new FieldPath("att", attDate), on ? deleteField() : t); }
+    catch (e) { alert("Could not save. Check your internet."); }
+  },
+  backup: () => {
+    const data = { app: LIB, exportedOn: todayStr(), totalSeats, students, expenses };
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: "application/json" }));
+    a.download = `library-backup-${todayStr()}.json`; a.click();
   },
   remove: async (id) => {
     if (!confirm("Delete this student? Their entire record will be lost.")) return;
@@ -674,12 +861,12 @@ const A = {
   },
   setSeats: async (v) => { await setDoc(doc(db, "settings", "main"), { totalSeats: Math.max(1, +v || 1) }); },
   csv: () => {
-    const rows = [["Seat", "Name", "Phone", "Shift", "Fees", "Month", "Status", "Amount", "Mode", "Date", "Received by", "Expiry"]];
+    const rows = [["Seat", "Name", "Phone", "Shift", "Fees", "Status", "Expiry", "Last paid", "Mode", "Paid on", "Received by"]];
     [...activeList()].sort((a, b) => (isRes(a) ? a.seat : 9999) - (isRes(b) ? b.seat : 9999)).forEach((s) => {
-      const p = s.payments && s.payments[month], e = expiryOf(s);
-      rows.push([isRes(s) ? s.seat : "Unreserved", s.name, s.phone, s.shift, s.fee, labelOf(month), p ? "Paid" : "Due", p ? p.amt : "", p ? p.mode : "", p ? p.date : "", p ? p.by || "" : "", e ? fmtY(e) : ""]);
+      const g = entriesOf(s).pop(), e = expiryOf(s);
+      rows.push([isRes(s) ? s.seat : "Unreserved", s.name, s.phone, s.shift, s.fee, isPaid(s) ? "Paid" : "Due", e ? fmtY(e) : "", g ? g.amt : "", g ? g.mode : "", g ? g.date : "", g ? g.by || "" : ""]);
     });
-    download(rows, `library-${month}.csv`);
+    download(rows, `students-${todayStr()}.csv`);
   },
   csvExp: () => {
     const rows = [["Date", "Category", "Paid to", "Note", "Amount", "Status", "Paid on"]];
